@@ -8,7 +8,7 @@
 ## [Unreleased]
 
 ### 新增
-- 暂无
+- 新增 GitHub Actions 工作流：CI（`master` 推送与 PR 触发，构建测试并上传插件产物）与 Release（`v*` 标签发布正式版、`master` 推送更新 `latest` 预发布）。
 
 ## [0.0.1] - 2026-06-20
 

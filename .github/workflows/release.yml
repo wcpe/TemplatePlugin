@@ -1,0 +1,75 @@
+# 发布产物：
+#   - 推送 v* 标签：发布正式 Release（标记为最新稳定版）
+#   - 推送 master 且无标签：重建 latest 预发布，上传最新开发版产物
+name: Release
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+# 创建 Release / 标签需要写权限
+permissions:
+  contents: write
+
+# 发布任务不互相取消，避免产物上传到一半被打断
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 构建并发布
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          # 拉取完整历史，便于自动生成发布说明
+          fetch-depth: 0
+
+      - name: 配置 JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: gradle
+
+      - name: 赋予 gradlew 执行权限
+        run: chmod +x ./gradlew
+
+      # 构建发行版本（不含 TabooLib 本体）
+      - name: 构建发行产物
+        run: ./gradlew build --stacktrace --no-daemon
+
+      # 从 gradle.properties 读取版本号，供 latest 预发布标题使用
+      - name: 读取项目版本号
+        id: meta
+        run: echo "version=$(grep '^version=' gradle.properties | cut -d '=' -f2)" >> "$GITHUB_OUTPUT"
+
+      # 场景一：推送 v* 标签时发布正式版本
+      - name: 发布正式版本
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" plugin/build/libs/*.jar \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --latest
+
+      # 场景二：推送 master 分支（无标签）时，重建滚动的 latest 预发布
+      - name: 更新 latest 预发布
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 删除旧的 latest 预发布及其标签（首次运行不存在时忽略错误）
+          gh release delete latest --yes --cleanup-tag || true
+          # 在当前提交上重建 latest 预发布并上传产物
+          gh release create latest plugin/build/libs/*.jar \
+            --title "Latest 开发预览版 (v${{ steps.meta.outputs.version }})" \
+            --notes "基于 master 最新提交 ${GITHUB_SHA} 的开发预览构建，非正式发布；如需稳定版请使用带 v 前缀的正式 Release。" \
+            --prerelease \
+            --target "${GITHUB_SHA}"
