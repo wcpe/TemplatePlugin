@@ -3,6 +3,8 @@ pluginManagement {
     repositories {
         mavenLocal()
         maven("https://maven.wcpe.top/repository/maven-public/")
+        // KSP 插件标记（com.google.devtools.ksp）托管在 Google Maven
+        maven("https://dl.google.com/dl/android/maven2/")
         mavenCentral()
         gradlePluginPortal()
     }

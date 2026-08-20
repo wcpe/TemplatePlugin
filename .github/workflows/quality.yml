@@ -1,4 +1,4 @@
-# 代码质量门禁：与 ci.yml（JDK 8 纯编译+测试）解耦的独立工作流。
+# 代码质量门禁：与 ci.yml（JDK 17 纯编译+测试）解耦的独立工作流。
 #   - Java：SpotBugs(+FindSecBugs) / Error Prone / PMD / Checkstyle / JaCoCo
 #   - Kotlin：detekt / ktlint / Kover
 #   - 安全：FindSecBugs（挂 SpotBugs）+ detekt 自带规则 + Semgrep
@@ -27,12 +27,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       # 质量工具（SpotBugs/detekt/Checkstyle 10/PMD 7 等）要求 JDK 11+，此处用 JDK 17；
       # 配合 -PenableErrorProne，编译以 JDK 17 + --release 8 产出 Java 8 字节码
       - name: 配置 JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
           java-version: '17'
@@ -48,7 +48,7 @@ jobs:
       # 无论成败都上传报告，便于排查（HTML/XML 报告位于各模块 build/reports）
       - name: 上传质量报告
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: quality-reports
           path: '**/build/reports/**'
@@ -63,7 +63,7 @@ jobs:
       image: semgrep/semgrep
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       # 发现问题时返回非零退出码以阻断（--error）
       - name: 运行 Semgrep
