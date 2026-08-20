@@ -2,9 +2,14 @@
 pluginManagement {
     repositories {
         mavenLocal()
-        maven("https://maven.wcpe.top/repository/maven-public/")
-        // KSP 插件标记（com.google.devtools.ksp）托管在 Google Maven
-        maven("https://dl.google.com/dl/android/maven2/")
+        // 仅从 wcpe 代理解析 TabooLib 生态插件；其余插件（KSP 等）走 Maven Central /
+        // Plugin Portal，避免 wcpe 对非本库构件的 .module 请求超时（524）导致整体解析失败
+        maven("https://maven.wcpe.top/repository/maven-public/") {
+            content {
+                includeGroup("io.izzel.taboolib")
+                includeGroup("top.wcpe.taboolib.ioc")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
