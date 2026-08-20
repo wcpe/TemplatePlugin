@@ -25,12 +25,13 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      # 工程编译目标为 Java 8（见根 build.gradle.kts 的 toolchain），故 CI 直接使用 JDK 8
-      - name: 配置 JDK 8
+      # 工程编译目标为 Java 8（见根 build.gradle.kts 的 toolchain，由 foojay resolver 自动供给 JDK 8）。
+      # 构建/配置过程需运行在 JDK 17+：top.wcpe.taboolib.ioc 插件（Java 17 字节码）无法在 JDK 8 上加载。
+      - name: 配置 JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: '17'
           cache: gradle
 
       # 仓库内 gradlew 为非可执行权限，Linux 运行器需手动补上执行位

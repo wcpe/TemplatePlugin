@@ -29,11 +29,13 @@ jobs:
           # 拉取完整历史，便于自动生成发布说明
           fetch-depth: 0
 
-      - name: 配置 JDK 8
+      # 工程编译目标为 Java 8（toolchain 由 foojay resolver 自动供给）；
+      # 构建过程需 JDK 17+（top.wcpe.taboolib.ioc 插件为 Java 17 字节码）
+      - name: 配置 JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: '17'
           cache: gradle
 
       - name: 赋予 gradlew 执行权限
