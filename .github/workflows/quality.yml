@@ -24,7 +24,7 @@ concurrency:
 jobs:
   gradle-quality:
     name: Gradle 质量门禁
-    runs-on: [self-hosted, Linux]
+    runs-on: self-hosted
     steps:
       - name: 检出代码
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -57,7 +57,7 @@ jobs:
 
   semgrep:
     name: Semgrep 安全审查
-    runs-on: [self-hosted, Linux]
+    runs-on: self-hosted
     # 官方镜像内置 semgrep，使用公共规则集，无需登录令牌
     container:
       image: semgrep/semgrep
