@@ -13,10 +13,10 @@ import org.jlleitschuh.gradle.ktlint.KtlintExtension
 
 plugins {
     java
-    id("io.izzel.taboolib") version "2.0.38-38f563b" apply false
+    id("io.izzel.taboolib") version "2.0.39-wcpe.1" apply false
     id("org.jetbrains.kotlin.jvm") version "2.1.0" apply false
     id("com.google.devtools.ksp") version "2.1.0-1.0.29" apply false
-    id("top.wcpe.taboolib.ioc") version "0.0.6" apply false
+    id("top.wcpe.taboolib.ioc") version "0.0.10" apply false
     // 代码质量插件：仅声明到 classpath，由 subprojects 按需 apply（详见 docs/CODE_QUALITY.md）
     id("com.github.spotbugs") version "6.5.8" apply false
     id("net.ltgt.errorprone") version "4.1.0" apply false
@@ -55,7 +55,7 @@ subprojects {
             install(CommandHelper)
             install(I18n)
         }
-        version { taboolib = "6.3.0-75b18a2" }
+        version { taboolib = "6.3.0-wcpe.1" }
     }
 
     repositories {
