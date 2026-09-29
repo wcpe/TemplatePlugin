@@ -20,7 +20,7 @@
 | 插件框架 | TabooLib | 6.3.0-wcpe.1 |
 | TabooLib Gradle 插件 | `io.izzel.taboolib` | 2.0.39-wcpe.1 |
 | 语言 | Kotlin / Java | Kotlin 2.1.0 / Java 8（toolchain + JVM target 1.8） |
-| 依赖注入 | `top.wcpe.taboolib.ioc` | 0.0.10 |
+| 依赖注入 | `top.wcpe.taboolib.ioc` | 0.0.11 |
 | 注解处理 | KSP（`com.google.devtools.ksp`） | 2.1.0-1.0.29 |
 | 持久化 ORM | EasyQuery（`com.easy-query`） | 3.1.82 |
 | 测试框架 | JUnit 5（`junit-jupiter`） | 5.11.4 |
