@@ -1,22 +1,29 @@
-# 发布产物：
-#   - 推送 v* 标签：发布正式 Release（标记为最新稳定版）
-#   - 推送 master 且无标签：重建 latest 预发布，上传最新开发版产物
+# 正式版发布：**仅由 v* 标签触发**。
+#
+# 为什么不再随 master 推送触发：发布正式版意味着"某个提交成为可长期引用的稳定版本"，
+# 必须由人显式决定打标签，而不是每次推送都自动发生。master 上的开发预览改由 preview.yml
+# 手动触发（见该文件说明）。
+#
+# 注意 `on.push` 的 `tags` 与 `branches` 是 **OR** 语义：一旦在此写上 `branches`，
+# 每次普通 master 推送都会触发本工作流，而版本推导会取到分支名而非版本号。
+# 故此处**只写 tags**。
 name: Release
 
 on:
   push:
-    branches: [ master ]
-    tags: [ 'v*' ]
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
-# 创建 Release / 标签需要写权限
+# 创建 Release 需要写权限
 permissions:
   contents: write
 
-# 发布任务不互相取消，避免产物上传到一半被打断
+# 同一标签重复推送（含强制移动标签后重推）视为同一次发布工作的重复触发，收敛到同一分组；
+# 后到者取代先到者：一个标签只对应一个正式 Release，先完成者已发布，后来者必然冲突，
+# 串行只会多烧一次构建。不同标签分属不同分组，可并行。
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   release:
@@ -26,17 +33,56 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: 检出代码
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # 拉取完整历史，便于自动生成发布说明
+          # 拉取完整历史：发布说明要由 GitHub 依据本标签与其前一标签之间的合并 PR 生成
           fetch-depth: 0
+
+      # 校验标签确实指向默认分支上的提交。`on.push.tags` 本身不含分支约束，
+      # 而**不能**用 `on.push.branches` 去约束——它与 `tags` 是 OR 语义（见文件头注释），
+      # 会连普通 master 推送一起触发本工作流。故只能在作业内判定。
+      - name: 校验标签指向默认分支
+        run: |
+          set -euo pipefail
+          # checkout 已用 fetch-depth: 0 拉取全部远程分支，此处无需再 fetch
+          for b in origin/master origin/main; do
+            if git rev-parse --verify --quiet "$b" >/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "$b"; then
+              echo "标签 $GITHUB_REF_NAME 指向 $b 上的提交，校验通过"
+              exit 0
+            fi
+          done
+          echo "::error::标签 $GITHUB_REF_NAME 指向的提交不在默认分支（master / main）上，拒绝发布"
+          exit 1
+
+      # 解析版本号；先经环境变量传入，避免把表达式直接内插进 run 脚本
+      - name: 解析版本号
+        id: version
+        env:
+          RAW_TAG: ${{ github.ref_name }}
+        run: |
+          TAG="${RAW_TAG}"
+          # 格式校验：只接受 vX.Y.Z（可带 -rc.N 等预发布后缀，其会被标记为 Pre-release）
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::发布标签格式必须是 v<主>.<次>.<修>（可带预发布后缀），实际为 '${TAG}'"
+            exit 1
+          fi
+          # 校验标签版本号与 gradle.properties 一致，防止"标签写 1.0.0、产物却是 0.0.1"
+          FILE_VERSION=$(sed -n 's/^version=//p' gradle.properties | head -n 1 | tr -d ' \r')
+          VERSION="${TAG#v}"
+          if [ "${FILE_VERSION}" != "${VERSION}" ]; then
+            echo "::error::gradle.properties 的版本 (${FILE_VERSION}) 与标签版本 (${VERSION}) 不一致，请先同步后再发版"
+            exit 1
+          fi
+          echo "tag=${TAG}"         >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "已解析：tag=${TAG}, version=${VERSION}"
 
       # 工程编译目标为 Java 8（toolchain 由 foojay resolver 自动供给）；
       # 构建过程需 JDK 17+（top.wcpe.taboolib.ioc 插件为 Java 17 字节码）。
       # 不启用 setup-java 的 gradle 缓存：自托管 runner 的 ~/.gradle 本就持久存在，
       # 交给 actions/cache 打包上传没有收益，缓存体积还会超过 10GB 上限而空转。
       - name: 配置 JDK 17
-        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
           java-version: '17'
@@ -48,33 +94,55 @@ jobs:
       - name: 构建发行产物
         run: ./gradlew build --stacktrace --no-daemon
 
-      # 从 gradle.properties 读取版本号，供 latest 预发布标题使用
-      - name: 读取项目版本号
-        id: meta
-        run: echo "version=$(grep '^version=' gradle.properties | cut -d '=' -f2)" >> "$GITHUB_OUTPUT"
-
-      # 场景一：推送 v* 标签时发布正式版本
-      - name: 发布正式版本
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # 按精确文件名定位产物并断言存在：默认 shell 无 pipefail，用 `ls | head -1`
+      # 时 jar 缺失也会"成功"返回空串，从而创建一个不带产物的 Release。
+      - name: 收集产物
+        id: artifacts
         run: |
-          gh release create "${GITHUB_REF_NAME}" plugin/build/libs/*.jar \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes \
-            --latest
+          VERSION="${{ steps.version.outputs.version }}"
+          # 项目名取自 settings.gradle.kts 的 rootProject.name，改名后无需同步本文件
+          PROJECT_NAME=$(sed -n 's/.*rootProject\.name = "\(.*\)".*/\1/p' settings.gradle.kts | head -n 1)
+          if [ -z "${PROJECT_NAME}" ]; then
+            echo "::error::无法从 settings.gradle.kts 解析 rootProject.name"
+            exit 1
+          fi
+          JAR="plugin/build/libs/${PROJECT_NAME}-${VERSION}.jar"
+          if [ ! -f "${JAR}" ]; then
+            echo "::error::未找到本次构建产物 ${JAR}（版本号已解析为 ${VERSION}）"
+            echo "libs 目录内容：" >&2
+            ls -la plugin/build/libs >&2 || true
+            exit 1
+          fi
+          echo "jar=${JAR}" >> "$GITHUB_OUTPUT"
+          echo "已定位产物：${JAR}"
 
-      # 场景二：推送 master 分支（无标签）时，重建滚动的 latest 预发布
-      - name: 更新 latest 预发布
-        if: github.ref == 'refs/heads/master'
+      # 用 softprops/action-gh-release 而非直接调 `gh`：自托管 runner 的软件环境不一致，
+      # 实测有 runner 未装 gh CLI，直接调会以 "gh: command not found"（exit 127）失败——
+      # 而这是发布路径的最后一步，构建已成功却发不出去。action 自带所需工具，不依赖 runner。
+      #
+      # generate_release_notes 开启 GitHub 原生自动笔记：在自定义正文之后追加
+      # What's Changed / New Contributors / Full Changelog，逐条收录已合并的 PR。
+      # 注意自动笔记只收录**合并的 PR**，绕过 PR 直接推送的提交不会出现在其中。
+      #
+      # 第三方 action 固定到 commit SHA：该步骤持 contents: write 与 GITHUB_TOKEN，
+      # 浮动 tag 一旦被上游移动即会执行新代码；升级时同步替换 SHA 并更新行尾注释。
+      - name: 发布正式 Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body: |
+            ## 安装
+
+            1. 将 `${{ github.event.repository.name }}-${{ steps.version.outputs.version }}.jar` 放入服务端 `plugins/` 目录；
+            2. 重启服务端完成加载。
+
+            ---
+
+            完整变更史见 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/master/CHANGELOG.md)
+          # 含连字符的标签（如 v1.0.0-rc.1）自动标记为预发布，与正式版共用同一条流水线
+          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
+          generate_release_notes: true
+          files: ${{ steps.artifacts.outputs.jar }}
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # 删除旧的 latest 预发布及其标签（首次运行不存在时忽略错误）
-          gh release delete latest --yes --cleanup-tag || true
-          # 在当前提交上重建 latest 预发布并上传产物
-          gh release create latest plugin/build/libs/*.jar \
-            --title "Latest 开发预览版 (v${{ steps.meta.outputs.version }})" \
-            --notes "基于 master 最新提交 ${GITHUB_SHA} 的开发预览构建，非正式发布；如需稳定版请使用带 v 前缀的正式 Release。" \
-            --prerelease \
-            --target "${GITHUB_SHA}"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

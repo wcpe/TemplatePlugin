@@ -74,6 +74,15 @@
 
 发版（更新版本号、推导 SemVer、同步文档、构建验证、打本地 tag）由发版技能规范：`.claude/skills/release-version/SKILL.md`。该技能**只创建本地提交与 tag，绝不推送远程**。
 
+正式 Release 由推送 `v*` 标签触发（见 [README.md](README.md#发布版本)）。因此技能完成后，还需由人显式推送标签才会真正发版：
+
+```bash
+git push origin master        # 先推提交
+git push origin v0.0.1        # 再推标签，触发 Release 工作流
+```
+
+标签版本必须与 `gradle.properties` 的 `version=` 一致，否则工作流会拒绝发布。若只想出预览版，改在 Actions 页面手动触发「预览版发布」即可，无需打标签。
+
 ## 8. 首次使用本模板
 
 如果你是基于本模板新建项目，请先完成 [README.md](README.md#首次使用修改清单) 中的"首次使用修改清单"，替换项目标识（group、名称、Maven 私服、包名等）。

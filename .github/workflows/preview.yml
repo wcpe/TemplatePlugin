@@ -1,0 +1,186 @@
+# 预览版发布：**仅手动触发**（Actions → 预览版发布 → Run workflow，分支选 master）。
+#
+# 为什么不随 master 推送自动触发：原实现是"删掉旧 latest → 重建"，两步非原子，且没有
+# concurrency，多次推送并发时会互相踩。实测到两条后果：
+#   · 删除动作对不存在的引用会返回 422（不是 404），若只容忍 404 会在此抛错；
+#   · 一旦 latest 被删掉而没重建成功，之后每次运行都会红在同一步（自锁），得手工补标签。
+# 现改为"强制移动 latest 标签 → 创建或更新 Release"：不再有删除窗口，也不再自动跑；
+# 需要刷新预览版时手动点一次即可。
+name: 预览版发布
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 手动连点两次时后一次取消前一次，避免两个运行同时移动标签、同时写 Release
+concurrency:
+  group: preview-manual
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: 构建并发布预览版
+    runs-on: self-hosted
+    # 作业超时上限（分钟）：收尾步骤若挂死不至于拖满 GitHub 默认的 360 分钟
+    timeout-minutes: 60
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # 提交摘要步骤需要多条历史（默认 fetch-depth: 1 只能拿到 HEAD 一条）
+          fetch-depth: 20
+
+      # 工程编译目标为 Java 8（toolchain 由 foojay resolver 自动供给）；
+      # 构建过程需 JDK 17+（top.wcpe.taboolib.ioc 插件为 Java 17 字节码）。
+      # 不启用 setup-java 的 gradle 缓存：自托管 runner 的 ~/.gradle 本就持久存在，
+      # 交给 actions/cache 打包上传没有收益，缓存体积还会超过 10GB 上限而空转。
+      - name: 配置 JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 赋予 gradlew 执行权限
+        run: chmod +x ./gradlew
+
+      - name: 构建发行产物
+        run: ./gradlew build --stacktrace --no-daemon
+
+      - name: 读取项目版本号
+        id: version
+        run: |
+          VERSION=$(sed -n 's/^version=//p' gradle.properties | head -n 1 | tr -d ' \r')
+          if [ -z "${VERSION}" ]; then
+            echo "::error::无法从 gradle.properties 解析出版本号（version= 行缺失或为空）"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "项目版本号：${VERSION}"
+
+      # 预览版不是正式版：gradle.properties 里是**当前开发版本**的号，直接拿它当预览版标识
+      # 会与正式版资产同名。预览版标识改用 latest-<短sha>-<日期>，与正式版彻底分开。
+      - name: 计算预览版标识
+        id: stamp
+        run: |
+          SHA=$(git rev-parse --short=7 HEAD)
+          DATE=$(date -u +%Y%m%d)
+          echo "stamp=latest-$SHA-$DATE" >> "$GITHUB_OUTPUT"
+          echo "预览版标识：latest-$SHA-$DATE"
+
+      # 按精确文件名定位产物并断言存在：默认 shell 无 pipefail，用 `ls | head -1`
+      # 时 jar 缺失也会"成功"返回空串，从而创建一个不带产物的 Release。
+      - name: 收集产物
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          STAMP="${{ steps.stamp.outputs.stamp }}"
+          # 项目名取自 settings.gradle.kts 的 rootProject.name，改名后无需同步本文件
+          PROJECT_NAME=$(sed -n 's/.*rootProject\.name = "\(.*\)".*/\1/p' settings.gradle.kts | head -n 1)
+          if [ -z "${PROJECT_NAME}" ]; then
+            echo "::error::无法从 settings.gradle.kts 解析 rootProject.name"
+            exit 1
+          fi
+          SRC="plugin/build/libs/${PROJECT_NAME}-${VERSION}.jar"
+          if [ ! -f "${SRC}" ]; then
+            echo "::error::未找到本次构建产物 ${SRC}"
+            echo "libs 目录内容：" >&2
+            ls -la plugin/build/libs >&2 || true
+            exit 1
+          fi
+          mkdir -p artifacts
+          # 预览资产带独立标识，与正式版资产同名隔离
+          cp "${SRC}" "artifacts/${PROJECT_NAME}-${STAMP}.jar"
+          echo "已收集产物："
+          ls -la artifacts/
+
+      # 取最近若干条提交摘要作为 release body 的补充
+      # @ 符号转义为 &#64; 防止 GitHub 解析为用户提及
+      - name: 生成提交摘要
+        id: changelog
+        run: |
+          LOG=$(git log -20 --pretty=format:'- %h %s' | sed 's/@/\&#64;/g')
+          echo "log<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$LOG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      # 先把标签移到本次提交，再由下面这步创建/更新 Release。
+      # 用"移动"而不是"删了再建"：删除窗口一旦失败（或被并发的另一次运行踩到），latest 就会
+      # 消失，之后每次运行都会因引用不存在而持续失败。updateRef 对不存在的引用返回 422，
+      # 故"已存在"与"不存在"两种情况在这里一并兜住。
+      - name: 把 latest 标签指到本次提交
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner, repo = context.repo.repo, sha = context.sha;
+            try {
+              await github.rest.git.updateRef({ owner, repo, ref: 'tags/latest', sha, force: true });
+              core.info(`latest 已移动到 ${sha}`);
+            } catch (error) {
+              if (error.status !== 404 && error.status !== 422) throw error;
+              await github.rest.git.createRef({ owner, repo, ref: 'refs/tags/latest', sha });
+              core.info(`latest 已创建并指向 ${sha}`);
+            }
+
+      # 预览资产名每次都不同（带本次标识），不清掉上一轮就会在同一个 Release 上越堆越多。
+      # 只清资产，不动 Release 本身。
+      - name: 清掉上一轮预览资产
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner, repo = context.repo.repo;
+            let release;
+            try {
+              release = await github.rest.repos.getReleaseByTag({ owner, repo, tag: 'latest' });
+            } catch (error) {
+              if (error.status === 404) { core.info('还没有 latest Release，无需清理'); return; }
+              throw error;
+            }
+            for (const asset of release.data.assets) {
+              await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: asset.id });
+              core.info(`已删除旧资产 ${asset.name}`);
+            }
+
+      # softprops/action-gh-release 对已存在的标签走 update、不存在则 create，两条路都不需要
+      # 先删掉任何东西；同名资产会被覆盖上传。故这里不再有"删除 → 重建"窗口。
+      # 该 action 自带所需工具，不依赖 runner 是否安装 gh CLI（自托管 runner 环境不一致）。
+      #
+      # generate_release_notes 开启 GitHub 原生自动笔记：在自定义正文之后追加
+      # What's Changed / New Contributors / Full Changelog，逐条收录已合并的 PR。
+      # 与正式版保持一致——预览版同样需要能看出"这一版含哪些 PR"。
+      # 注意自动笔记只收录**合并的 PR**，绕过 PR 直接推送的提交不会出现在其中
+      # （正文里的提交摘要可补上这部分信息）。
+      - name: 发布 / 刷新预览版 Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          tag_name: latest
+          target_commitish: ${{ github.sha }}
+          name: "预览版 ${{ steps.stamp.outputs.stamp }}"
+          prerelease: true
+          body: |
+            ## 预览版（手动构建）
+
+            > 此版本由 master 手动触发构建发布，非稳定版本，仅供试用。
+            > 如需稳定版请使用带 v 前缀的正式 Release。
+
+            ### 提交摘要
+
+            ${{ steps.changelog.outputs.log }}
+
+            ### 产物
+
+            - `${{ github.event.repository.name }}-${{ steps.stamp.outputs.stamp }}.jar`
+
+            ### 安装
+
+            1. 将上述 jar 放入服务端 `plugins/` 目录；
+            2. 重启服务端完成加载。
+
+            ---
+            完整变更史见 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/master/CHANGELOG.md)
+          generate_release_notes: true
+          files: artifacts/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

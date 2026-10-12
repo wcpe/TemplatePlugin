@@ -52,6 +52,34 @@ cd TemplatePlugin
 
 > 参数 `-PDeleteCode` 表示移除所有逻辑代码以减少体积。
 
+## 发布版本
+
+仓库内置三个 GitHub Actions 工作流：
+
+| 工作流 | 触发方式 | 说明 |
+| --- | --- | --- |
+| CI | push / PR 到 `master` | 质量门禁 → 构建与测试（质量门禁不通过则不进入构建） |
+| 预览版发布 | **仅手动触发** | Actions → 预览版发布 → Run workflow；发布/刷新 `latest` 预发布 |
+| Release | **推送 `v*` 标签** | 发布正式版 Release，附带依据合并 PR 自动生成的变更说明 |
+
+### 发布正式版
+
+1. 把 `gradle.properties` 的 `version=` 更新为目标版本号并提交；
+2. 打标签并推送：
+
+```bash
+git tag v0.0.1
+git push origin v0.0.1
+```
+
+标签版本必须与 `gradle.properties` 一致，否则工作流会拒绝发布。带后缀的标签（如 `v1.0.0-rc.1`）会被标记为预发布。
+
+> Release 说明中的「What's Changed」由 GitHub 依据**已合并的 PR** 自动生成，因此建议变更一律走 PR；直接推送到 master 的提交不会出现在其中。
+
+### 发布预览版
+
+在 Actions 页面手动触发「预览版发布」工作流即可。它会把 `latest` 标签移到触发时的提交，并以 `预览版 latest-<短SHA>-<日期>` 为名刷新该预发布，产物文件名同样带该标识，与正式版互不覆盖。
+
 ## 首次使用修改清单
 
 克隆模板后，按以下清单把项目标识替换为你自己的（逐项核对，避免遗漏）：
@@ -63,6 +91,7 @@ cd TemplatePlugin
 - [ ] **Maven 发布目标**：`api/build.gradle.kts` 的 `releasesRepoUrl` / `snapshotsRepoUrl` 改为你的私服地址；发布凭据 `username` / `password` 配在 `~/.gradle/gradle.properties`。**若不需要对外发布**，可删除远程仓库段、只保留 `mavenLocal()`。
 - [ ] **依赖仓库（注意保留）**：根 `build.gradle.kts` 与 `settings.gradle.kts` 中的 `https://maven.wcpe.top/repository/maven-public/` 是 `top.wcpe.taboolib.ioc` 等依赖的来源，**作为依赖源应保留**；它与上一条的"发布目标"是两回事。
 - [ ] **更新日志链接**：`CHANGELOG.md` 底部的 `your-org/your-repo` 改为你的仓库地址。
+- [ ] **自托管 runner 标签**：三个工作流的 `runs-on` 现为裸 `self-hosted`（会调度到任意自托管 runner）。若组织内有多个不同环境的 runner，改为显式标签（如 `[self-hosted, linux]`）以定向到确定机队。
 - [ ] **许可证**：`LICENSE` 默认版权归属 `WCPE`（`Copyright (c) 2026 WCPE`），改成你的名字，或更换为你需要的协议。
 - [ ] **本文件**：把上方标题、简介改成你的项目信息。
 
