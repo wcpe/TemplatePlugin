@@ -49,16 +49,16 @@ jobs:
       - name: 赋予 gradlew 执行权限
         run: chmod +x ./gradlew
 
-      # 质量门禁前置阻断：任何规则违规都在此处失败，不会进入后续构建与产物阶段。
-      # 必须带 -PenableErrorProne：该开关同时把 toolchain 切到 JDK 17（CI 运行器已是 JDK 17）。
-      - name: 质量门禁
+      # 质量门禁前置阻断：check 汇总 PMD / Checkstyle / SpotBugs / Error Prone /
+      # detekt / ktlint 与 JUnit 5 测试，任何一项失败都在此处终止，不进入产物阶段。
+      - name: 质量门禁与测试
         run: |
           env -u JAVA_TOOL_OPTIONS -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy \
             GRADLE_OPTS="-Dhttps.protocols=TLSv1.3,TLSv1.2 -Djdk.tls.client.protocols=TLSv1.3,TLSv1.2${GRADLE_OPTS:+ $GRADLE_OPTS}" \
-            ./gradlew qualityCheck -PenableErrorProne --stacktrace --no-daemon
+            ./gradlew check --stacktrace --no-daemon
 
-      # build 任务包含全模块编译与 JUnit 5 测试
-      - name: 构建与测试
+      # build = assemble + check，此处复用上一步的 up-to-date 结果，只补齐产物打包
+      - name: 构建产物
         run: |
           env -u JAVA_TOOL_OPTIONS -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy \
             GRADLE_OPTS="-Dhttps.protocols=TLSv1.3,TLSv1.2 -Djdk.tls.client.protocols=TLSv1.3,TLSv1.2${GRADLE_OPTS:+ $GRADLE_OPTS}" \

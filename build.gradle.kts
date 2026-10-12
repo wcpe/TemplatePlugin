@@ -2,12 +2,10 @@ import io.izzel.taboolib.gradle.*
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import com.github.spotbugs.snom.SpotBugsExtension
-import com.github.spotbugs.snom.SpotBugsTask
 import io.gitlab.arturbosch.detekt.Detekt
 import io.gitlab.arturbosch.detekt.extensions.DetektExtension
 import org.gradle.api.plugins.quality.Checkstyle
 import org.gradle.api.plugins.quality.CheckstyleExtension
-import org.gradle.api.plugins.quality.Pmd
 import org.gradle.api.plugins.quality.PmdExtension
 import org.jlleitschuh.gradle.ktlint.KtlintExtension
 
@@ -17,7 +15,7 @@ plugins {
     id("org.jetbrains.kotlin.jvm") version "2.1.0" apply false
     id("com.google.devtools.ksp") version "2.1.0-1.0.29" apply false
     id("top.wcpe.taboolib.ioc") version "0.0.11" apply false
-    // 代码质量插件：仅声明到 classpath，由 subprojects 按需 apply（详见 docs/CODE_QUALITY.md）
+    // 代码质量插件：仅声明到 classpath，由 subprojects 统一 apply
     id("com.github.spotbugs") version "6.5.8" apply false
     id("net.ltgt.errorprone") version "4.1.0" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
@@ -25,19 +23,9 @@ plugins {
     id("org.jetbrains.kotlinx.kover") version "0.9.1" apply false
 }
 
-// Error Prone 需在 JDK 17 上运行 javac（编译产物仍用 --release 8 兼容 Java 8）。
-// 默认 toolchain 维持 Java 8 以保证 JDK 8 的 ci.yml 不受影响；
-// 仅当显式传入 -PenableErrorProne（如手动执行质量门禁，运行在 JDK 17）时才切到 JDK 17 并启用 Error Prone。
-val enableErrorProne = providers.gradleProperty("enableErrorProne").isPresent
-
-// 质量任务中用于聚合的任务名（无对应源码时这些任务不会被创建，matching 自动跳过）
-val qualityTaskNames = setOf(
-    "pmdMain", "pmdTest",
-    "checkstyleMain", "checkstyleTest",
-    "spotbugsMain", "spotbugsTest",
-    "detekt", "ktlintCheck",
-    "jacocoTestReport", "koverXmlReport", "koverHtmlReport"
-)
+// 编译工具链版本，默认 17。多个版本共存时可用 -PjdkToolchain=8 让 javac 走真正的 JDK 8，
+// 而不只是产出 8 字节码。Error Prone 需要 JDK 17 的 javac，仅在 17 工具链下挂载。
+val jdkToolchain = providers.gradleProperty("jdkToolchain").getOrElse("17").toInt()
 
 subprojects {
     apply<JavaPlugin>()
@@ -74,164 +62,19 @@ subprojects {
         compileOnly("ink.ptms.core:v12004:12004:universal")
     }
 
-    // ==================== 代码质量工具 ====================
-    // 这些工具运行在 Gradle 守护进程的 JVM（需 JDK 11+，推荐 17）上分析代码，
-    // 与编译目标（Java 8 字节码）无关。统一在此应用，并通过下方逻辑与 check 解耦。
-    val hasJavaMain = file("src/main/java").exists()
-    val hasKotlinMain = file("src/main/kotlin").exists()
-
-    // Kotlin 质量：detekt（缺陷/异味/复杂度）、ktlint（样式/格式化）—— 仅扫描 .kt，无源码时空过
-    apply(plugin = "io.gitlab.arturbosch.detekt")
-    apply(plugin = "org.jlleitschuh.gradle.ktlint")
-
-    // Java 质量：PMD（源码规则）、Checkstyle（样式）—— 仅扫描 src/*/java，无源码时空过
-    apply(plugin = "pmd")
-    apply(plugin = "checkstyle")
-
-    // 测试覆盖率：Kotlin 模块用 Kover，Java 模块用 JaCoCo（二者都挂测试 JVM 代理，互斥应用避免冲突）
-    if (hasKotlinMain) {
-        apply(plugin = "org.jetbrains.kotlinx.kover")
-    } else {
-        apply(plugin = "jacoco")
+    // 产物固定为 Java 8 字节码：17 工具链用 --release 8，8 工具链用 -source/-target 8。
+    // source/target 必须显式对齐 1.8，否则 Kotlin 会判定 Java 与 Kotlin 的 JVM 目标不一致。
+    java {
+        toolchain { languageVersion.set(JavaLanguageVersion.of(jdkToolchain)) }
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    // SpotBugs(+FindSecBugs)：分析字节码，仅对含 Java 主源码的模块启用，避免误报 Kotlin 字节码
-    if (hasJavaMain) {
-        apply(plugin = "com.github.spotbugs")
-        configure<SpotBugsExtension> {
-            toolVersion.set("4.8.6")
-            ignoreFailures.set(false) // 严格阻断
-        }
-        dependencies {
-            // 安全审查：FindSecBugs 作为 SpotBugs 插件挂载
-            "spotbugsPlugins"("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
-        }
-        tasks.withType<SpotBugsTask>().configureEach {
-            onlyIf { JavaVersion.current().isJava11Compatible } // JDK 8 上自动跳过
-            reports.maybeCreate("html").required.set(true)
-        }
-    }
-
-    // Error Prone：编译期缺陷检测，需 JDK 17 javac，仅在开启且含 Java 源码时应用
-    if (enableErrorProne && hasJavaMain) {
-        apply(plugin = "net.ltgt.errorprone")
-        dependencies {
-            "errorprone"("com.google.errorprone:error_prone_core:2.36.0")
-        }
-    }
-
-    // detekt 配置：使用官方默认规则集，严格阻断
-    configure<DetektExtension> {
-        parallel = true
-        ignoreFailures = false
-    }
-    tasks.withType<Detekt>().configureEach {
-        onlyIf { JavaVersion.current().isJava11Compatible }
-        // 排除构建产物与 KSP 生成代码，避免对生成代码误报
-        exclude("**/build/**", "**/generated/**")
-        reports {
-            html.required.set(true)
-            xml.required.set(true)
-        }
-    }
-
-    // ktlint 配置：官方默认规则集，严格阻断，排除构建产物
-    configure<KtlintExtension> {
-        ignoreFailures.set(false)
-        filter {
-            exclude { element -> element.file.path.replace('\\', '/').contains("/build/") }
-        }
-    }
-    tasks.matching { it.name.startsWith("ktlint") }.configureEach {
-        onlyIf { JavaVersion.current().isJava11Compatible }
-    }
-    // 不对 Gradle 构建脚本（*.kts）做 ktlint 检查：构建脚本沿用 TabooLib DSL 习惯（含通配符 import），
-    // 仅对源码（src/**/*.kt）执行样式门禁
-    tasks.matching { it.name.contains("KotlinScript") }.configureEach { enabled = false }
-
-    // PMD 配置：官方 quickstart 规则集，严格阻断（ignoreFailures 默认 false）
-    configure<PmdExtension> {
-        toolVersion = "7.7.0"
-        isConsoleOutput = true
-        ruleSets = listOf("rulesets/java/quickstart.xml")
-    }
-    tasks.withType<Pmd>().configureEach {
-        onlyIf { JavaVersion.current().isJava11Compatible }
-    }
-
-    // Checkstyle 配置：内置 Google 官方规则（config/checkstyle/checkstyle.xml），严格阻断
-    configure<CheckstyleExtension> {
-        toolVersion = "10.21.0"
-        maxWarnings = 0 // 任何告警都视为失败
-    }
-    tasks.withType<Checkstyle>().configureEach {
-        onlyIf { JavaVersion.current().isJava11Compatible }
-        // 必须显式指定 Java 11+ 启动器：未启用 Error Prone 时项目 toolchain 固定为 Java 8，
-        // 若不指定，质量任务会沿用 Java 8 toolchain 启动，而 Checkstyle 10 要求 Java 11+，
-        // 会以 "class file version 55.0" 直接崩溃。
-        javaLauncher.set(
-            javaToolchains.launcherFor {
-                languageVersion.set(JavaLanguageVersion.of(17))
-            }
-        )
-        // 抑制文件必须传绝对路径：checkstyle.xml 里这两项默认值是裸文件名，
-        // Checkstyle 会相对「子项目目录」解析，导致放在根 config/checkstyle/ 下的
-        // 抑制文件根本加载不到（且因 optional=true 而静默失效）。
-        // 显式指向根目录，保证 docs 里承诺的抑制方式真实可用。
-        configProperties?.putAll(
-            mapOf(
-                "org.checkstyle.google.suppressionfilter.config" to
-                    rootProject.file("config/checkstyle/checkstyle-suppressions.xml").absolutePath,
-                "org.checkstyle.google.suppressionxpathfilter.config" to
-                    rootProject.file("config/checkstyle/checkstyle-xpath-suppressions.xml").absolutePath
-            )
-        )
-    }
-
-    // 质量任务与 check/build 解耦：保证 JDK 8 的 ci.yml 仅做纯编译+测试，不触发质量门禁。
-    // 质量门禁统一由根项目的 qualityCheck 聚合任务驱动（见文件末尾），需在 JDK 17 下手动执行。
-    afterEvaluate {
-        val isQualityName = { n: String ->
-            n.startsWith("pmd") || n.startsWith("checkstyle") || n.startsWith("spotbugs") ||
-                n.startsWith("detekt") || n.startsWith("ktlint")
-        }
-        // 递归解析依赖项中的任务名：依赖可能是 Task / TaskProvider / String / 集合 /
-        // Callable / Provider（PMD、Checkstyle 即以 Callable 形式挂入 check）。
-        fun depNames(dep: Any?): List<String> = when (dep) {
-            is Task -> listOf(dep.name)
-            is TaskProvider<*> -> listOf(dep.name)
-            is String -> listOf(dep)
-            is Iterable<*> -> dep.flatMap { depNames(it) }
-            is java.util.concurrent.Callable<*> -> depNames(dep.call())
-            is Provider<*> -> depNames(dep.orNull)
-            else -> emptyList()
-        }
-        tasks.findByName("check")?.let { check ->
-            check.setDependsOn(
-                check.dependsOn.filterNot { dep ->
-                    val names = depNames(dep)
-                    names.isNotEmpty() && names.all { isQualityName(it) }
-                }
-            )
-        }
-    }
-
-    // Java 编码与目标：启用 Error Prone 时用 JDK 17 + --release 8，否则维持 Java 8 toolchain
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
-        if (enableErrorProne) {
+        // --release 需要 JDK 9+；JDK 8 工具链下只能退回 -source/-target 8
+        if (jdkToolchain >= 9) {
             options.release.set(8)
-        }
-    }
-
-    // 默认路径固定 Java 8 toolchain，保证 JDK 8 的 ci.yml 行为不变；
-    // Error Prone 路径不固定 toolchain，直接用运行 Gradle 的 JVM（CI 为 JDK 17、本机需 JDK 17+），
-    // 仅靠 --release 8 约束目标级别，避免对某个具体小版本 JDK 的硬依赖。
-    if (!enableErrorProne) {
-        java {
-            toolchain {
-                languageVersion.set(JavaLanguageVersion.of(8))
-            }
         }
     }
 
@@ -242,21 +85,92 @@ subprojects {
         }
     }
 
-}
+    // ==================== 代码质量 ====================
+    // 各插件默认已把自己的任务挂入 check，构建脚本不需要任何任务级接线：
+    // detekt / ktlint / PMD / Checkstyle / SpotBugs 与 JUnit 5 测试统一由 check 汇总。
+    apply(plugin = "io.gitlab.arturbosch.detekt")
+    apply(plugin = "org.jlleitschuh.gradle.ktlint")
+    apply(plugin = "pmd")
+    apply(plugin = "checkstyle")
+    // 覆盖率：Kotlin 模块用 Kover，Java 模块用 JaCoCo（二者都挂测试 JVM 代理，互斥避免冲突）
+    apply(plugin = if (file("src/main/kotlin").exists()) "org.jetbrains.kotlinx.kover" else "jacoco")
 
-// 聚合任务：运行全部代码质量门禁与覆盖率报告。需在 JDK 17（或更高）上执行，
-// 启用 Error Prone 时追加 -PenableErrorProne。该门禁在 ci.yml 中作为 build 的前置阻断步骤执行。
-tasks.register("qualityCheck") {
-    group = "verification"
-    description = "运行全部代码质量门禁（PMD/Checkstyle/SpotBugs/detekt/ktlint）与覆盖率报告，需 JDK 17"
-}
+    configure<DetektExtension> {
+        parallel = true
+        ignoreFailures = false
+    }
+    tasks.withType<Detekt>().configureEach {
+        // 排除构建产物与 KSP 生成代码，避免对生成代码误报
+        exclude("**/build/**", "**/generated/**")
+        reports {
+            html.required.set(true)
+            xml.required.set(true)
+        }
+    }
 
-gradle.projectsEvaluated {
-    tasks.named("qualityCheck") {
-        dependsOn(
-            subprojects.flatMap { sp ->
-                sp.tasks.matching { it.name in qualityTaskNames }
+    configure<KtlintExtension> {
+        ignoreFailures.set(false)
+        // 排除构建产物；构建脚本沿用 TabooLib DSL 习惯（含通配符 import），不做样式门禁
+        filter {
+            exclude {
+                val path = it.file.path.replace('\\', '/')
+                path.contains("/build/") || path.endsWith(".gradle.kts")
             }
+        }
+    }
+
+    configure<PmdExtension> {
+        toolVersion = "7.7.0"
+        isConsoleOutput = true
+        ruleSets = listOf("rulesets/java/quickstart.xml")
+    }
+
+    configure<CheckstyleExtension> {
+        toolVersion = "10.21.0"
+        maxWarnings = 0 // 任何告警都视为失败
+    }
+    tasks.withType<Checkstyle>().configureEach {
+        // Checkstyle 10 要求 JDK 11+：工具链为 8 时必须显式换 17 启动器，
+        // 否则会随工具链用 Java 8 启动并以 "class file version 55.0" 崩溃
+        if (jdkToolchain < 11) {
+            javaLauncher.set(
+                javaToolchains.launcherFor {
+                    languageVersion.set(JavaLanguageVersion.of(17))
+                }
+            )
+        }
+        // checkstyle.xml 里的抑制文件是裸文件名，Checkstyle 按子项目目录解析，
+        // 放在根 config/checkstyle/ 下的抑制文件会静默失效，必须给绝对路径
+        configProperties?.putAll(
+            mapOf(
+                "org.checkstyle.google.suppressionfilter.config" to
+                    rootProject.file("config/checkstyle/checkstyle-suppressions.xml").absolutePath,
+                "org.checkstyle.google.suppressionxpathfilter.config" to
+                    rootProject.file("config/checkstyle/checkstyle-xpath-suppressions.xml").absolutePath
+            )
         )
+    }
+
+    // SpotBugs + FindSecBugs 与 Error Prone 都只面向 Java：无 Java 源码的模块不挂载，
+    // 免得分析 Kotlin 字节码 / 空跑 javac 产生无意义开销与误报
+    val hasJava = file("src/main/java").exists()
+
+    if (hasJava) {
+        apply(plugin = "com.github.spotbugs")
+        configure<SpotBugsExtension> {
+            toolVersion.set("4.8.6")
+            ignoreFailures.set(false)
+        }
+        dependencies {
+            "spotbugsPlugins"("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
+        }
+    }
+
+    // Error Prone 挂在 javac 进程上，要求 JDK 17 的编译器
+    if (hasJava && jdkToolchain >= 17) {
+        apply(plugin = "net.ltgt.errorprone")
+        dependencies {
+            "errorprone"("com.google.errorprone:error_prone_core:2.36.0")
+        }
     }
 }
