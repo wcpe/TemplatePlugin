@@ -1,0 +1,13 @@
+# 插件中文文案
+# 加载方：TabooLib I18n 模块，文件放在 src/main/resources/lang/ 下，文件名用语言代码
+# 引用方式：代码里用 sendLang("节点名")，节点名对应本文件的层级路径，层级之间用中划线连接，
+#          例如 greet-welcome 对应下面 greet 下的 welcome
+# 参数规则：带参数的文案在节点名后加参数个数，例如 sendLang("greet-command-reply", 名字1, 名字2)
+#          实际读取的是 greet-command-reply-2 节点，节点里的 %1%、%2% 按顺序替换
+# 修改后：执行 /<插件名> reload 或重启服务器生效
+
+greet:
+  # 打招呼命令的回复文案，带两个参数：%1% 是发起命令的玩家，%2% 是命令里填入的玩家名
+  command-reply-2: "%1% 已向 %2% 打招呼。"
+  # 玩家填错参数时的用法提示，不带参数
+  command-usage: "用法：/template greet <玩家名>"
