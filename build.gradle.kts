@@ -12,15 +12,15 @@ import org.jlleitschuh.gradle.ktlint.KtlintExtension
 plugins {
     java
     id("io.izzel.taboolib") version "2.0.39-wcpe.1" apply false
-    id("org.jetbrains.kotlin.jvm") version "2.1.0" apply false
-    id("com.google.devtools.ksp") version "2.1.0-1.0.29" apply false
+    id("org.jetbrains.kotlin.jvm") version "2.4.21" apply false
+    id("com.google.devtools.ksp") version "2.3.12" apply false
     id("top.wcpe.taboolib.ioc") version "0.0.11" apply false
     // 代码质量插件：仅声明到 classpath，由 subprojects 统一 apply
-    id("com.github.spotbugs") version "6.5.8" apply false
-    id("net.ltgt.errorprone") version "4.1.0" apply false
+    id("com.github.spotbugs") version "6.5.12" apply false
+    id("net.ltgt.errorprone") version "5.1.1" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.2" apply false
-    id("org.jetbrains.kotlinx.kover") version "0.9.1" apply false
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0" apply false
+    id("org.jetbrains.kotlinx.kover") version "0.9.11" apply false
 }
 
 subprojects {
@@ -150,12 +150,12 @@ subprojects {
             ignoreFailures.set(false)
         }
         dependencies {
-            "spotbugsPlugins"("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
+            "spotbugsPlugins"("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")
         }
 
         apply(plugin = "net.ltgt.errorprone")
         dependencies {
-            "errorprone"("com.google.errorprone:error_prone_core:2.36.0")
+            "errorprone"("com.google.errorprone:error_prone_core:2.50.0")
         }
     }
 }
