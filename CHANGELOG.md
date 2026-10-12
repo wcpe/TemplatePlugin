@@ -8,7 +8,14 @@
 ## [Unreleased]
 
 ### 新增
-- 新增 GitHub Actions 工作流：CI（`master` 推送与 PR 触发，构建测试并上传插件产物）与 Release（`v*` 标签发布正式版、`master` 推送更新 `latest` 预发布）。
+- 新增 GitHub Actions 工作流：CI（`master` 推送与 PR 触发，构建并测试）与 Release（`v*` 标签发布正式版、`master` 推送更新 `latest` 预发布）。两者均调度到自托管 runner，统一设置作业超时，不使用 `actions/cache`，也不上传 workflow 制品。
+- 默认启用 Gradle 配置缓存（`org.gradle.configuration-cache=true`，并配 `problems=fail`）。
+
+### 变更
+- 质量门禁接回 CI，作为 `build` 的前置阻断步骤（非独立 job）：任何规则违规都会阻止后续构建。
+- 修复未启用 Error Prone 时 Checkstyle 因沿用 Java 8 toolchain 而崩溃的问题，改为显式绑定 JDK 17 启动器。
+- 修复 Checkstyle 抑制文件路径解析：原默认值按子项目目录解析，导致根目录 `config/checkstyle/` 下的抑制文件静默失效；现显式传入绝对路径。
+- 补充注释规范：Javadoc 摘要首句需以 ASCII 句点结尾（Checkstyle `SummaryJavadoc` 要求）。
 
 ## [0.0.1] - 2026-06-20
 

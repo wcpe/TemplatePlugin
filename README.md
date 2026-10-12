@@ -9,7 +9,7 @@
 - **持久化**：KSP + [EasyQuery](https://github.com/dromara/easy-query) Code First，编译期生成 EntityProxy。
 - **对外 API 发布**：`api` 模块配置 `maven-publish`（含源码 JAR），公开类型走纯 Java 保证干净 ABI。
 - **国际化**：内置 TabooLib `I18n` 模块。
-- **代码质量审查**：内置 Java（SpotBugs / FindSecBugs / Error Prone / PMD / Checkstyle / JaCoCo）与 Kotlin（detekt / ktlint / Kover / Semgrep）质量门禁，独立 CI 工作流，与编译解耦，详见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
+- **代码质量审查**：内置 Java（SpotBugs / FindSecBugs / Error Prone / PMD / Checkstyle / JaCoCo）与 Kotlin（detekt / ktlint / Kover）质量门禁，与编译解耦，并在 CI 中作为构建的前置阻断，详见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
 - **工程规范**：`.claude/rules/` 覆盖注释 / 配置 / 测试 / 对外 API / 提交；附发版技能。
 
 技术栈与模块拓扑详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
@@ -73,7 +73,7 @@ cd TemplatePlugin
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 模块拓扑、技术栈、构建系统、分层约定。 |
 | [API.md](docs/API.md) | 对外 API 模块定位、发布坐标、接入方式、编写约定。 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、构建、编码与提交规范、PR 流程。 |
-| [CODE_QUALITY.md](docs/CODE_QUALITY.md) | 代码质量与安全审查工具链：工具清单、运行方式、CI、规则配置。 |
+| [CODE_QUALITY.md](docs/CODE_QUALITY.md) | 代码质量与安全审查工具链：工具清单、运行方式、规则配置。 |
 | [CHANGELOG.md](CHANGELOG.md) | 更新日志（历史归档于 `docs/changelog/`）。 |
 | `.claude/rules/` | 强制工程规范（注释 / 配置 / 测试 / 对外 API / 提交）。 |
 | `.claude/skills/release-version/` | 本地发版流程技能。 |

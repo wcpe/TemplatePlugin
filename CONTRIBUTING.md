@@ -22,7 +22,7 @@
 | `./gradlew qualityCheck` | 运行全部代码质量门禁与覆盖率报告（**需 JDK 17+**，加 `-PenableErrorProne` 含 Error Prone）。 |
 | `./gradlew :api:publishToMavenLocal` | 将 `api` 模块发布到本地 Maven 仓库。 |
 
-提交前至少跑通 `./gradlew build`；涉及业务代码改动建议在 JDK 17 下跑通 `./gradlew qualityCheck`。质量工具清单与配置见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
+提交前至少跑通 `./gradlew build`；涉及业务代码改动建议在 JDK 17 下跑通 `./gradlew qualityCheck -PenableErrorProne`（该门禁已在 CI 中作为构建前置步骤，本地跑通可避免推送到远端后才失败）。质量工具清单与配置见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
 
 ## 3. 项目结构
 

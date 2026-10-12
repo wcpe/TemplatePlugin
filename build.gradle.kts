@@ -27,7 +27,7 @@ plugins {
 
 // Error Prone 需在 JDK 17 上运行 javac（编译产物仍用 --release 8 兼容 Java 8）。
 // 默认 toolchain 维持 Java 8 以保证 JDK 8 的 ci.yml 不受影响；
-// 仅当显式传入 -PenableErrorProne（如 quality.yml，运行在 JDK 17）时才切到 JDK 17 并启用 Error Prone。
+// 仅当显式传入 -PenableErrorProne（如手动执行质量门禁，运行在 JDK 17）时才切到 JDK 17 并启用 Error Prone。
 val enableErrorProne = providers.gradleProperty("enableErrorProne").isPresent
 
 // 质量任务中用于聚合的任务名（无对应源码时这些任务不会被创建，matching 自动跳过）
@@ -166,10 +166,30 @@ subprojects {
     }
     tasks.withType<Checkstyle>().configureEach {
         onlyIf { JavaVersion.current().isJava11Compatible }
+        // 必须显式指定 Java 11+ 启动器：未启用 Error Prone 时项目 toolchain 固定为 Java 8，
+        // 若不指定，质量任务会沿用 Java 8 toolchain 启动，而 Checkstyle 10 要求 Java 11+，
+        // 会以 "class file version 55.0" 直接崩溃。
+        javaLauncher.set(
+            javaToolchains.launcherFor {
+                languageVersion.set(JavaLanguageVersion.of(17))
+            }
+        )
+        // 抑制文件必须传绝对路径：checkstyle.xml 里这两项默认值是裸文件名，
+        // Checkstyle 会相对「子项目目录」解析，导致放在根 config/checkstyle/ 下的
+        // 抑制文件根本加载不到（且因 optional=true 而静默失效）。
+        // 显式指向根目录，保证 docs 里承诺的抑制方式真实可用。
+        configProperties?.putAll(
+            mapOf(
+                "org.checkstyle.google.suppressionfilter.config" to
+                    rootProject.file("config/checkstyle/checkstyle-suppressions.xml").absolutePath,
+                "org.checkstyle.google.suppressionxpathfilter.config" to
+                    rootProject.file("config/checkstyle/checkstyle-xpath-suppressions.xml").absolutePath
+            )
+        )
     }
 
     // 质量任务与 check/build 解耦：保证 JDK 8 的 ci.yml 仅做纯编译+测试，不触发质量门禁。
-    // 质量门禁统一由根项目的 qualityCheck 聚合任务驱动（见文件末尾），在 JDK 17 的 quality.yml 中运行。
+    // 质量门禁统一由根项目的 qualityCheck 聚合任务驱动（见文件末尾），需在 JDK 17 下手动执行。
     afterEvaluate {
         val isQualityName = { n: String ->
             n.startsWith("pmd") || n.startsWith("checkstyle") || n.startsWith("spotbugs") ||
@@ -225,7 +245,7 @@ subprojects {
 }
 
 // 聚合任务：运行全部代码质量门禁与覆盖率报告。需在 JDK 17（或更高）上执行，
-// 启用 Error Prone 时追加 -PenableErrorProne。CI 见 .github/workflows/quality.yml。
+// 启用 Error Prone 时追加 -PenableErrorProne。该门禁在 ci.yml 中作为 build 的前置阻断步骤执行。
 tasks.register("qualityCheck") {
     group = "verification"
     description = "运行全部代码质量门禁（PMD/Checkstyle/SpotBugs/detekt/ktlint）与覆盖率报告，需 JDK 17"
