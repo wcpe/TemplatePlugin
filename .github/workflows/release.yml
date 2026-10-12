@@ -28,7 +28,9 @@ concurrency:
 jobs:
   release:
     name: 构建并发布
-    runs-on: self-hosted
+    # 定向到确定机队：裸写 self-hosted 会匹配任意自托管 runner，各机缓存与环境状态不一致。
+    # 与同组织其他项目保持一致的标签集。
+    runs-on: [self-hosted, linux]
     # 作业超时上限（分钟）：发布流程不应长时间无输出挂起，一旦挂死不至于拖满 GitHub 默认的 360 分钟
     timeout-minutes: 60
     steps:
@@ -90,9 +92,16 @@ jobs:
       - name: 赋予 gradlew 执行权限
         run: chmod +x ./gradlew
 
-      # 构建发行版本（不含 TabooLib 本体）
+      # 构建发行版本（不含 TabooLib 本体）。
+      # 绕过 runner 注入的代理：自托管 runner 会为所有 HTTP/HTTPS 注入本地代理，
+      # 而该代理会中断 Gradle 的 TLS 握手——症状是 fork 出 daemon 后零输出挂死。
+      # 故需用 env -u 彻底清除代理变量（只设 JAVA_TOOL_OPTIONS="" 不够，清不掉 Gradle
+      # 直接读取的代理变量），并用 GRADLE_OPTS 固定可用 TLS 协议。与 ci.yml 一致。
       - name: 构建发行产物
-        run: ./gradlew build --stacktrace --no-daemon
+        run: |
+          env -u JAVA_TOOL_OPTIONS -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy \
+            GRADLE_OPTS="-Dhttps.protocols=TLSv1.3,TLSv1.2 -Djdk.tls.client.protocols=TLSv1.3,TLSv1.2${GRADLE_OPTS:+ $GRADLE_OPTS}" \
+            ./gradlew build --stacktrace --no-daemon
 
       # 按精确文件名定位产物并断言存在：默认 shell 无 pipefail，用 `ls | head -1`
       # 时 jar 缺失也会"成功"返回空串，从而创建一个不带产物的 Release。

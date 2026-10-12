@@ -22,8 +22,13 @@ concurrency:
 jobs:
   build:
     name: 测试与构建
-    runs-on: self-hosted
-    # 作业超时上限（分钟）：收尾步骤会长时间没有日志输出，一旦挂死不至于拖满 GitHub 默认的 360 分钟
+    # 定向到确定机队：裸写 self-hosted 会匹配任意自托管 runner，实测三次运行分别落到
+    # 三台不同机器上，各机缓存与环境状态不一致（其中之一挂死 30 分钟无输出）。
+    # 与同组织其他项目保持一致的标签集。
+    runs-on: [self-hosted, linux]
+    # 超时上限（分钟）：这是兜底而非常规耗时。正常 runner 上约 3 分钟；经代理的慢 runner
+    # 上首次运行需冷下载全部依赖，会显著更久（但应在推进）。若真挂死，也会以明确失败收场
+    # 而非无限 pending 拖满 GitHub 默认的 360 分钟。
     timeout-minutes: 60
     steps:
       - name: 检出代码
@@ -47,8 +52,14 @@ jobs:
       # 质量门禁前置阻断：任何规则违规都在此处失败，不会进入后续构建与产物阶段。
       # 必须带 -PenableErrorProne：该开关同时把 toolchain 切到 JDK 17（CI 运行器已是 JDK 17）。
       - name: 质量门禁
-        run: ./gradlew qualityCheck -PenableErrorProne --stacktrace --no-daemon
+        run: |
+          env -u JAVA_TOOL_OPTIONS -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy \
+            GRADLE_OPTS="-Dhttps.protocols=TLSv1.3,TLSv1.2 -Djdk.tls.client.protocols=TLSv1.3,TLSv1.2${GRADLE_OPTS:+ $GRADLE_OPTS}" \
+            ./gradlew qualityCheck -PenableErrorProne --stacktrace --no-daemon
 
       # build 任务包含全模块编译与 JUnit 5 测试
       - name: 构建与测试
-        run: ./gradlew build --stacktrace --no-daemon
+        run: |
+          env -u JAVA_TOOL_OPTIONS -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy \
+            GRADLE_OPTS="-Dhttps.protocols=TLSv1.3,TLSv1.2 -Djdk.tls.client.protocols=TLSv1.3,TLSv1.2${GRADLE_OPTS:+ $GRADLE_OPTS}" \
+            ./gradlew build --stacktrace --no-daemon

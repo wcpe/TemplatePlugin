@@ -91,7 +91,8 @@ git push origin v0.0.1
 - [ ] **Maven 发布目标**：`api/build.gradle.kts` 的 `releasesRepoUrl` / `snapshotsRepoUrl` 改为你的私服地址；发布凭据 `username` / `password` 配在 `~/.gradle/gradle.properties`。**若不需要对外发布**，可删除远程仓库段、只保留 `mavenLocal()`。
 - [ ] **依赖仓库（注意保留）**：根 `build.gradle.kts` 与 `settings.gradle.kts` 中的 `https://maven.wcpe.top/repository/maven-public/` 是 `top.wcpe.taboolib.ioc` 等依赖的来源，**作为依赖源应保留**；它与上一条的"发布目标"是两回事。
 - [ ] **更新日志链接**：`CHANGELOG.md` 底部的 `your-org/your-repo` 改为你的仓库地址。
-- [ ] **自托管 runner 标签**：三个工作流的 `runs-on` 现为裸 `self-hosted`（会调度到任意自托管 runner）。若组织内有多个不同环境的 runner，改为显式标签（如 `[self-hosted, linux]`）以定向到确定机队。
+- [ ] **自托管 runner 标签**：三个工作流的 `runs-on` 现为 `[self-hosted, linux]`。请确认你的 runner 带有 `linux` 标签；若标签不同，改为实际使用的标签集（如 `[self-hosted, docker]`），以定向到确定机队而非任意 runner。
+- [ ] **runner 代理**：构建步骤已用 `env -u` 清除代理变量并固定 TLS 协议，以绕过会中断 Gradle 握手的本地代理。若你的 runner 不使用代理，这些设置也是安全的空操作，可保留。
 - [ ] **许可证**：`LICENSE` 默认版权归属 `WCPE`（`Copyright (c) 2026 WCPE`），改成你的名字，或更换为你需要的协议。
 - [ ] **本文件**：把上方标题、简介改成你的项目信息。
 
