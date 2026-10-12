@@ -1,0 +1,28 @@
+# 统一编辑器与质量工具（ktlint / detekt / IDE）的格式约定。
+# 改动本文件会影响 ktlint 门禁结果，改前先跑一次 ./gradlew ktlintCheck 验证。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 140
+
+# Kotlin 与 Gradle 脚本
+[*.{kt,kts}]
+indent_size = 4
+
+# Java 跟随 Checkstyle 的 Google 风格（2 空格）
+[*.java]
+indent_size = 2
+
+# YAML 用 2 空格
+[*.{yml,yaml}]
+indent_size = 2
+
+# Markdown 行尾两空格是换行语法，不能裁剪
+[*.md]
+trim_trailing_whitespace = false

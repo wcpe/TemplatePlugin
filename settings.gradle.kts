@@ -13,14 +13,10 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
-
-    plugins {
-        id("top.wcpe.taboolib.ioc") version "0.0.11"
-    }
 }
 
 plugins {
-    // 允许 Gradle 按需自动下载 Java 8 toolchain（构建 JVM 为 JDK 17+ 时保证编译目标仍是 Java 8）
+    // 允许 Gradle 按需自动下载缺失的编译工具链 JDK（本项目固定用 JDK 17 工具链编译）
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 

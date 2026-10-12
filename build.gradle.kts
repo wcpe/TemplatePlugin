@@ -79,6 +79,11 @@ subprojects {
         }
     }
 
+    // 测试统一走 JUnit 5：各模块新增测试时不必重复配置
+    tasks.withType<Test>().configureEach {
+        useJUnitPlatform()
+    }
+
     // ==================== 代码质量 ====================
     // 各插件默认已把自己的任务挂入 check，构建脚本不需要任何任务级接线：
     // detekt / ktlint / PMD / Checkstyle / SpotBugs 与 JUnit 5 测试统一由 check 汇总。

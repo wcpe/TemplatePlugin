@@ -31,7 +31,6 @@ publishing {
             artifactId = "${rootProject.name}-${project.name}".lowercase()
             version = "${project.version}"
             from(components["java"])
-            println("> Apply \"$groupId:$artifactId:$version\"")
         }
     }
 }
