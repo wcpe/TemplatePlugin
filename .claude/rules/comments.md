@@ -60,7 +60,7 @@ class PacketRegistry { ... }
 - Java 的 **Javadoc 摘要首句**统一用 ASCII 句点 `.` 结尾，例如 `/** 探针类，用于验证质量工具链是否生效. */`。
 - 其余正文（`@param` / `@return` 等描述、块注释、行注释）不受此限制，正常使用中文句号 `。`。
 - Kotlin 的 KDoc **不触发**该规则，可继续使用中文句号。
-- 质量门禁以 `maxWarnings = 0` 严格阻断，违反此约定会直接导致 `qualityCheck` 失败。
+- 质量门禁以 `maxWarnings = 0` 严格阻断，违反此约定会直接导致 `check` 失败。
 
 ## 5. 处理已存在的英文注释
 

@@ -2,6 +2,8 @@
 
 本模板内置一套 Java / Kotlin 代码质量与安全审查工具链，覆盖缺陷检测、代码异味、样式、安全与测试覆盖率。
 
+所有工具由 Gradle 插件在 `subprojects` 中统一应用，**它们的任务默认就挂在 `check` 上**，构建脚本不做任何任务级接线。因此质量门禁没有独立的聚合命令：跑 `check` 即跑全部门禁。
+
 ## 1. 工具总览
 
 ### Java
@@ -25,38 +27,36 @@
 
 ## 2. 运行环境
 
-> **关键点**：这些工具运行在「启动 Gradle 的 JVM（守护进程）」上，而不是项目的 Java 8 toolchain。
-> SpotBugs / Error Prone / detekt / Checkstyle 10 / PMD 7 均要求 **JDK 11+（推荐 17）** 才能运行；
-> 编译产物仍是 **Java 8 字节码**（启用 Error Prone 时用 `--release 8` 保证兼容）。
+> **关键点**：这些工具运行在「启动 Gradle 的 JVM（守护进程）」上，而不是项目的编译工具链。
+> SpotBugs / Error Prone / detekt / Checkstyle 10 / PMD 7 均要求 **JDK 11+（推荐 17）**；
+> 本项目编译工具链固定为 **JDK 17**，满足要求。
 
-- 在 **JDK 8** 上运行时，质量任务会通过 `onlyIf` 自动跳过，因此 JDK 8 的 `ci.yml`（纯编译 + 测试）不受影响。
-- 本地与 CI 运行质量门禁请使用 **JDK 17 或更高**。
-- Checkstyle 任务显式绑定了 **JDK 17 toolchain**（`javaLauncher`）。未启用 Error Prone 时项目 toolchain 固定为 Java 8，若不显式绑定，Checkstyle 10 会因运行在 Java 8 上而以 `class file version 55.0` 直接崩溃。
+- 构建与配置需要 **JDK 17**（TabooLib IoC 插件为 Java 17 字节码，低版本无法加载）。
+- 产物仍是 **Java 8 字节码**：编译走 `options.release = 8`，既锁定语言级别，也校验「只调用 Java 8 存在的 API」，可直接跑在 Java 8 的服务器上。
+- 质量任务的报告输出在各模块的 `build/reports/` 下（HTML / XML）。
 
 ## 3. 本地运行
 
 ```bash
-# 运行全部质量门禁与覆盖率报告（需 JDK 17+），不含 Error Prone
-./gradlew qualityCheck
+# 质量门禁 + 测试（PMD / Checkstyle / SpotBugs / Error Prone / detekt / ktlint + JUnit 5）
+./gradlew check
 
-# 追加 Error Prone（切到 JDK 17 toolchain + --release 8）
-./gradlew qualityCheck -PenableErrorProne
+# 完整构建：assemble + check
+./gradlew build
 ```
 
-- `qualityCheck` 是聚合任务，汇集所有模块的 PMD / Checkstyle / SpotBugs / detekt / ktlint 与覆盖率报告。
-- 任一规则违规即 **构建失败**（严格阻断）。
-- 报告输出在各模块的 `build/reports/` 下（HTML / XML）。
+- 任一规则违规即 **构建失败**（严格阻断，各工具均未开 `ignoreFailures`）。
+- `build` 已包含 `check`，本地不必再单独跑一遍。
+- 覆盖率报告**不在** `check` 中自动生成，需要时按模块类型单独跑：
 
-也可单独运行：`./gradlew detekt`、`./gradlew ktlintCheck`、`./gradlew pmdMain`、`./gradlew checkstyleMain`、`./gradlew spotbugsMain` 等。
+```bash
+./gradlew koverXmlReport        # 含 src/main/kotlin 的模块
+./gradlew jacocoTestReport      # 其余模块
+```
 
-## 4. 与构建解耦
+也可单独运行某个工具：`./gradlew detekt`、`./gradlew ktlintCheck`、`./gradlew pmdMain`、`./gradlew checkstyleMain`、`./gradlew spotbugsMain`。
 
-质量任务**不挂入** `check` / `build`，因此：
-
-- `./gradlew build` 只做编译 + 测试，不触发质量门禁；JDK 8 上可正常运行。
-- 质量门禁由 `qualityCheck` 聚合任务驱动，在 `ci.yml` 中作为构建的前置步骤执行（详见第 6 节）。
-
-## 5. 模块按需启用
+## 4. 模块按需启用
 
 为避免误报与代理冲突，工具按模块源码类型自动启用：
 
@@ -65,52 +65,50 @@
 - **PMD / Checkstyle**：仅扫描 `src/*/java`，无 Java 源码时空过。
 - **detekt / ktlint**：扫描 `.kt` 源码；**不检查** Gradle 构建脚本（`*.kts`），生成代码（`build/`、`generated/`）也被排除。
 
-> 因此在空模板上 `qualityCheck` 直接通过；随着你往各模块写代码，对应工具会自动生效。
+> 模板自带的示例代码覆盖了 Java 与 Kotlin 两侧，可直接验证各工具是否生效；删掉示例后各任务转为空过。
 
-## 6. CI 集成
+## 5. CI 集成
 
-质量门禁已在 `.github/workflows/ci.yml` 中接入，作为 `build` 的前置阻断步骤（非独立 job，复用同一个 runner 与已解析的依赖）：
+质量门禁已在 `.github/workflows/ci.yml` 中接入，作为产物构建的前置阻断步骤（非独立 job，复用同一个 runner 与已解析的依赖）：
 
 ```yaml
-- name: 质量门禁
-  run: ./gradlew qualityCheck -PenableErrorProne --stacktrace --no-daemon
+- name: 质量门禁与测试
+  run: ./gradlew check --stacktrace --no-daemon
 
-- name: 构建与测试
+- name: 构建产物
   run: ./gradlew build --stacktrace --no-daemon
 ```
 
-任何规则违规都会在第一步骤失败，后续构建与产物阶段不会执行。**注意**：`-PenableErrorProne` 是必需的 —— 该开关同时把 toolchain 切到 JDK 17；CI 运行器已是 JDK 17，满足要求。
+任何规则违规都会在第一步失败，第二步不会执行，因此**违规代码不会被产出成插件 JAR**。第二步的 `build` 会复用第一步的 `check` 结果（up-to-date），只补齐产物打包，很快。
 
 本地执行同样命令即可复现：
 
 ```bash
-./gradlew qualityCheck -PenableErrorProne
+./gradlew check
 ```
 
-报告输出在各模块 `build/reports/` 下（HTML / XML），CI 中不向 GitHub 上传制品。
+## 6. 配置缓存
 
-## 7. 配置缓存
-
-项目默认启用 Gradle **配置缓存**（`gradle.properties` 中 `org.gradle.configuration-cache=true`，并配 `problems=fail` 以免静默降级）。已实测 `qualityCheck`（含全部质量工具）与 `build` 均完全兼容，第二次起复用任务图，构建启动明显变快。
+项目默认启用 Gradle **配置缓存**（`gradle.properties` 中 `org.gradle.configuration-cache=true`，并配 `problems=fail` 以免静默降级）。`check`（含全部质量工具）与 `build` 均完全兼容，第二次起复用任务图，构建启动明显变快。
 
 若新增构建逻辑后出现 configuration cache 不兼容，构建会直接失败并指出具体行号；此时应改用兼容写法（避免在执行阶段读取 `Project`/`Task` 实例、使用 `providers` API 等），而不是关闭配置缓存。
 
-## 8. 规则配置与例外
+## 7. 规则配置与例外
 
 | 工具 | 配置位置 | 调整方式 |
 | --- | --- | --- |
-| Checkstyle | `config/checkstyle/checkstyle.xml` | 直接编辑（内容为官方 Google `google_checks.xml` 原版）；用 `config/checkstyle/checkstyle-suppressions.xml` 抑制（路径已在构建脚本中显式指定） |
+| Checkstyle | `config/checkstyle/checkstyle.xml` | 直接编辑（内容为官方 Google `google_checks.xml` 原版）；用 `config/checkstyle/checkstyle-suppressions.xml` 抑制（路径已在构建脚本中显式指定为绝对路径） |
+| 缩进与行宽 | `.editorconfig` | Java 2 空格（跟随 Checkstyle Google 风格），Kotlin 与 `*.kts` 4 空格，`max_line_length = 140` |
 | PMD | 根 `build.gradle.kts` 的 `ruleSets` | 改为自定义 ruleset 文件或增减分类 |
 | SpotBugs / FindSecBugs | 根 `build.gradle.kts` | 可配置 `excludeFilter` 排除过滤器 |
 | detekt | 官方默认 | 可新增 `detekt.yml` 并开启 `buildUponDefaultConfig` |
 | ktlint | 官方 `ktlint_official` | 通过项目 `.editorconfig` 调整 |
 
 行内抑制示例：
-
 - Java：`@SuppressWarnings("PMD.XxxRule")`、`@SuppressFBWarnings(...)`、Checkstyle 注释 `// CHECKSTYLE.OFF: Xxx`。
 - Kotlin：`@Suppress("DetektRuleId")`、ktlint 行内 `// ktlint-disable`（或 `@Suppress("ktlint:standard:rule-id")`）。
 
-### 8.1 Javadoc 首句句点（易踩）
+### 7.1 Javadoc 首句句点（易踩）
 
 `SummaryJavadoc` 要求 Javadoc 摘要**首句以 ASCII 句点 `.` 结尾**，中文句号 `。` 会报
 `Javadoc的第一句缺少一个结束时期`。因 `maxWarnings = 0` 严格阻断，这会让门禁直接失败：
@@ -122,7 +120,23 @@
 
 Kotlin 的 KDoc 不触发该规则，可正常使用中文句号。详见 `.claude/rules/comments.md` §4。
 
-## 9. 工具版本
+### 7.2 ktlint_official 的两条格式硬规则（易踩）
+
+模板自带的示例代码已按下列规则书写，改造代码时注意：
+
+- **类体首行不能有空行**：KDoc 之后要直接跟第一行成员，否则报 `no-empty-first-line-in-class-body`。
+- **多行表达式要换行**：`val x = subCommandExec { ... }` 这类多行赋值，`=` 后要换行再写表达式：
+
+  ```kotlin
+  val greet =
+      subCommandExec<ProxyCommandSender> {
+          sender.sendLang("greet-command-reply", sender.name, args)
+      }
+  ```
+
+- 文件末尾必须留一个换行（detekt `NewLineAtEndOfFile`），`.editorconfig` 的 `insert_final_newline = true` 对 IDE 生效，但命令行写入的文件需自行保证。
+
+## 8. 工具版本
 
 | 工具 | 版本 |
 | --- | --- |

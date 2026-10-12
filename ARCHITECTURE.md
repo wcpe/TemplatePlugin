@@ -1,7 +1,7 @@
 # 架构说明（ARCHITECTURE）
 
 > 本文档记录模板的**模块拓扑、技术栈与分层约定**，是发版时同步架构事实的依据（见 `.claude/skills/release-version/SKILL.md`）。
-> 当前模板为骨架，仅含构建脚本、暂无业务源码（`src/`）；下文描述的是约定的目录与分层，落地时按此组织代码。
+> 当前模板**自带一套最小可运行示例**（见 §3.4），删掉即得空骨架；下文描述的既是现有约定，也是落地时的组织依据。
 
 ## 1. 概述
 
@@ -19,7 +19,7 @@
 | 构建工具 | Gradle Wrapper | 8.9 |
 | 插件框架 | TabooLib | 6.3.0-wcpe.1 |
 | TabooLib Gradle 插件 | `io.izzel.taboolib` | 2.0.39-wcpe.1 |
-| 语言 | Kotlin / Java | Kotlin 2.1.0 / Java 8（toolchain + JVM target 1.8） |
+| 语言 | Kotlin / Java | Kotlin 2.1.0 / Java 8（编译工具链**固定 JDK 17**，以 `--release 8` 产出 Java 8 字节码，可在 Java 8 服务器运行） |
 | 依赖注入 | `top.wcpe.taboolib.ioc` | 0.0.11 |
 | 注解处理 | KSP（`com.google.devtools.ksp`） | 2.1.0-1.0.29 |
 | 持久化 ORM | EasyQuery（`com.easy-query`） | 3.1.82 |
@@ -72,16 +72,44 @@ TabooLib 安装的模块：`Basic`、`Bukkit`、`BukkitUtil`、`BukkitUI`、`Com
 - `api` 不依赖任何业务模块，仅由根 `subprojects {}` 提供 `kotlin-stdlib` 与 `ink.ptms.core`（均 `compileOnly`）。
 - 依赖方向单向：`plugin → core → api`，**严禁反向依赖**（`api` 不得引用 `core`/`plugin` 的类型）。
 
+### 3.4 源码目录结构
+
+模板自带的示例代码分布如下（路径以仓库根为基准）：
+
+```
+api/src/main/java/top/wcpe/mc/plugin/template/api/
+  └─ GreetingService.java                 对外契约接口（Java）
+
+project/core/src/main/kotlin/top/wcpe/mc/plugin/template/core/
+  ├─ service/GreetingServiceImpl.kt       IoC 托管的实现（@Service("greetingService")）
+  └─ command/TemplateCommand.kt           命令示例（/template greet <玩家名>）
+
+project/core/src/main/resources/lang/
+  └─ zh_CN.yml                            i18n 文案
+
+project/core/src/test/kotlin/top/wcpe/mc/plugin/template/core/service/
+  └─ GreetingServiceImplTest.kt           JUnit 5 测试
+```
+
+几点约定：
+
+- `api` 的公开类型走 `src/main/java`（Java 编写），其余模块的源码在 `src/main/kotlin`。
+- i18n 文案固定放 `src/main/resources/lang/`，文件名用语言代码（如 `zh_CN.yml`）。
+- 测试源码在 `src/test/kotlin`；`useJUnitPlatform()` 已在根 `build.gradle.kts` 的 `subprojects` 中统一配置，各模块不必重复声明。
+- 删掉上述文件即得空骨架，其余内容不受影响。
+
 ## 4. 构建系统
 
 ### 4.1 构建命令
 
 | 命令 | 用途 |
 | --- | --- |
-| `./gradlew build` | 构建**发行版本**（不含 TabooLib 本体），并运行单元测试。 |
+| `./gradlew check` | **质量门禁 + 测试**：PMD / Checkstyle / SpotBugs / Error Prone / detekt / ktlint 与 JUnit 5 一并执行，任一违规即失败。这些工具由各插件默认挂入 `check`，构建脚本里没有任何任务级接线。 |
+| `./gradlew build` | assemble + check，即构建**发行版本**（不含 TabooLib 本体）并跑全部门禁与测试。 |
 | `./gradlew taboolibBuildApi -PDeleteCode` | 构建**开发版本**（含 TabooLib 本体，供开发者使用、不可直接运行）；`-PDeleteCode` 移除逻辑代码以减小体积。 |
 | `./gradlew :api:publishToMavenLocal` | 把 `api` 模块发布到本地 Maven 仓库（联调 / 校验产物用）。 |
 | `./gradlew test` | 仅运行测试（`project:core` 使用 JUnit 5）。 |
+| `./gradlew koverXmlReport` / `./gradlew jacocoTestReport` | 手动生成覆盖率报告。**覆盖率不在 `check` 里自动出报告**：含 `src/main/kotlin` 的模块用 Kover，其余用 JaCoCo，按模块择一执行。 |
 
 ### 4.2 打包逻辑
 
@@ -97,6 +125,25 @@ TabooLib 安装的模块：`Basic`、`Bukkit`、`BukkitUtil`、`BukkitUI`、`Com
 - 根 `build.gradle.kts` 对所有 `subprojects` 应用 `io.izzel.taboolib` 并设 `subproject = true`；`plugin` 模块单独设 `subproject = false`，作为真正的插件入口。
 - IoC 由 `top.wcpe.taboolib.ioc` 提供。`plugin` 的 `taboolibIoc { autoTakeover(true); analysisFailOnError(true) }` 表示：自动注入 IoC 依赖并追加 relocate 规则；静态诊断发现 error 直接拦截构建。
 - 业务代码使用 IoC 注解（`@Service` / `@Repository` / `@Inject` 等）组织，避免手写单例与全局状态。
+
+> **易踩的坑**：TabooLib IoC 的 Gradle 插件只做**接管与 relocate**，**不会**把注解自动加进编译期 classpath。用到 `@Service` / `@Inject` 的模块必须自己声明依赖，否则编译期报 `Could not find`：
+>
+> ```kotlin
+> dependencies {
+>     compileOnly("top.wcpe.taboolib.ioc:taboolib-ioc-annotation:1.1.0")
+> }
+> ```
+>
+> 注意 group 是 `top.wcpe.taboolib.ioc`，**不是** `top.wcpe.taboolib`——写成后者会一直找不到依赖。当前 `project/core/build.gradle.kts` 即按此声明，版本与插件接管的 IoC 运行时保持一致。
+
+### 4.4 质量门禁与格式约定
+
+- 质量工具与 JUnit 5 由各插件**默认挂入 `check`**，不再需要任何任务级接线。
+- SpotBugs 与 Error Prone **仅在模块存在 `src/main/java` 时启用**，避免对 Kotlin 字节码误报。
+- ktlint **不检查 Gradle 构建脚本**（`*.gradle.kts` 已被排除）。
+- 根目录新增 `.editorconfig` 统一格式：Java 2 空格缩进（跟随 Checkstyle 的 Google 风格），Kotlin 与 kts 4 空格，`max_line_length = 140`。改动该文件会影响 ktlint 结果，改前先跑一次 `./gradlew ktlintCheck`。
+
+工具清单与规则细节见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
 
 ## 5. 发布模块（api）
 

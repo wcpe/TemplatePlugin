@@ -6,7 +6,7 @@
 
 | 工具 | 要求 |
 | --- | --- |
-| JDK | 8 或更高。项目编译目标为 Java 8，由 Gradle toolchain 管理；若本机无 JDK 8，请安装或开启 Gradle toolchain 自动获取。 |
+| JDK | **JDK 17**。编译工具链固定 JDK 17（与 CI 一致，`top.wcpe.taboolib.ioc` 插件本身就是 Java 17 字节码），但以 `--release 8` 产出 Java 8 字节码，产物可在 Java 8 服务器运行；本地由 Gradle toolchain 管理。 |
 | Gradle | 无需单独安装，使用仓库自带 Wrapper（`./gradlew`，Gradle 8.9）。 |
 | IDE | 推荐 IntelliJ IDEA，安装 Kotlin 插件。 |
 
@@ -16,13 +16,16 @@
 
 | 命令 | 用途 |
 | --- | --- |
-| `./gradlew build` | 构建发行版本（不含 TabooLib 本体）+ 运行测试。 |
+| `./gradlew check` | **质量门禁 + 测试**：PMD / Checkstyle / SpotBugs / Error Prone / detekt / ktlint 与 JUnit 5 一次跑完，任一违规即失败（需 JDK 17+）。 |
+| `./gradlew build` | assemble + check，构建发行版本（不含 TabooLib 本体）。 |
 | `./gradlew taboolibBuildApi -PDeleteCode` | 构建开发版本（含 TabooLib 本体，不可直接运行）。 |
-| `./gradlew test` | 运行单元测试（JUnit 5）。 |
-| `./gradlew qualityCheck` | 运行全部代码质量门禁与覆盖率报告（**需 JDK 17+**，加 `-PenableErrorProne` 含 Error Prone）。 |
+| `./gradlew test` | 仅运行测试（JUnit 5）。 |
+| `./gradlew koverXmlReport` / `./gradlew jacocoTestReport` | 手动生成覆盖率报告（不在 `check` 里，按模块择一）。 |
 | `./gradlew :api:publishToMavenLocal` | 将 `api` 模块发布到本地 Maven 仓库。 |
 
-提交前至少跑通 `./gradlew build`；涉及业务代码改动建议在 JDK 17 下跑通 `./gradlew qualityCheck -PenableErrorProne`（该门禁已在 CI 中作为构建前置步骤，本地跑通可避免推送到远端后才失败）。质量工具清单与配置见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
+提交前至少跑通 `./gradlew check`（`build` 会带上它，但显式跑一次失败信息更聚焦）。质量工具由各插件默认挂入 `check`，没有单独的聚合命令；覆盖率报告需另行手动执行。质量工具清单与配置见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
+
+CI 工作流分两步：先「质量门禁与测试」（`check`），再「构建产物」（`build`）。质量门禁仍是构建的**前置阻断项**——第一步失败则第二步不执行，本地提前跑通可避免推送到远端才失败。
 
 ## 3. 项目结构
 
@@ -31,6 +34,10 @@
 - `api`：对外契约（Java 公开类型，发布到 Maven）。
 - `project:core`：业务实现（Kotlin + IoC + EasyQuery）。
 - `plugin`：组装层（打包产出最终插件 JAR）。
+
+仓库自带一套**最小可运行示例**（`api` 下的 `GreetingService.java`、`core` 下的 `GreetingServiceImpl.kt` / `TemplateCommand.kt` / `zh_CN.yml` / `GreetingServiceImplTest.kt`），它能编译、能过门禁、能运行，可作为起点改写，也可整块删掉——具体清单见 [README.md](README.md#自带的最小可运行示例)。
+
+> 用到 `@Service` / `@Inject` 的模块必须自行声明 IoC 注解依赖（`compileOnly("top.wcpe.taboolib.ioc:taboolib-ioc-annotation:1.1.0")`）：TabooLib IoC 的 Gradle 插件只做接管与 relocate，不自动把注解加进编译期 classpath。注意 group 是 `top.wcpe.taboolib.ioc`，写成 `top.wcpe.taboolib` 会一直报 `Could not find`。
 
 ## 4. 编码规范
 
@@ -66,7 +73,7 @@
 ## 6. Pull Request
 
 1. 从最新主分支切出特性分支（如 `feat/xxx`、`fix/xxx`）。
-2. 保证 `./gradlew build` 通过、测试不回退。
+2. 保证 `./gradlew check`（质量门禁 + 测试）通过，`./gradlew build` 通过、测试不回退。
 3. PR 描述说明动机与改动要点，关联相关 issue。
 4. 涉及对外 API / 配置 / 行为变更时，同步更新 [API.md](docs/API.md) / [CHANGELOG.md](CHANGELOG.md) 等文档。
 

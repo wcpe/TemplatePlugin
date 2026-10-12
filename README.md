@@ -9,7 +9,7 @@
 - **持久化**：KSP + [EasyQuery](https://github.com/dromara/easy-query) Code First，编译期生成 EntityProxy。
 - **对外 API 发布**：`api` 模块配置 `maven-publish`（含源码 JAR），公开类型走纯 Java 保证干净 ABI。
 - **国际化**：内置 TabooLib `I18n` 模块。
-- **代码质量审查**：内置 Java（SpotBugs / FindSecBugs / Error Prone / PMD / Checkstyle / JaCoCo）与 Kotlin（detekt / ktlint / Kover）质量门禁，与编译解耦，并在 CI 中作为构建的前置阻断，详见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
+- **代码质量审查**：内置 Java（PMD / Checkstyle / SpotBugs / FindSecBugs / Error Prone）与 Kotlin（detekt / ktlint）质量门禁，外加 JUnit 5 测试，全部默认挂入 `check` —— 质量门禁与构建同一条命令（`build` = assemble + check），无需额外接线，在 CI 中作为构建的前置阻断，详见 [CODE_QUALITY.md](docs/CODE_QUALITY.md)。
 - **工程规范**：`.claude/rules/` 覆盖注释 / 配置 / 测试 / 对外 API / 提交；附发版技能。
 
 技术栈与模块拓扑详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
@@ -22,15 +22,37 @@
 | `project:core` | `project/core/` | 业务实现：服务、仓库、领域逻辑、EasyQuery 持久化（Kotlin）。 |
 | `plugin` | `plugin/` | 组装层：TabooLib 描述 + IoC 接管，打包产出最终插件 JAR。 |
 
+### 自带的最小可运行示例
+
+模板不是空骨架，仓库自带一套能编译、能过门禁、能运行的示例代码，可直接作为起点改写，也可以整块删掉：
+
+| 文件 | 作用 |
+| --- | --- |
+| [api/src/main/java/top/wcpe/mc/plugin/template/api/GreetingService.java](api/src/main/java/top/wcpe/mc/plugin/template/api/GreetingService.java) | 对外契约接口，唯一方法 `String welcome(String playerName)`；示范 `api` 模块的 Java 写法与 2 空格缩进。 |
+| [project/core/src/main/kotlin/top/wcpe/mc/plugin/template/core/service/GreetingServiceImpl.kt](project/core/src/main/kotlin/top/wcpe/mc/plugin/template/core/service/GreetingServiceImpl.kt) | 用 `@Service("greetingService")` 交给 IoC 容器托管并实现上述接口。 |
+| [project/core/src/main/kotlin/top/wcpe/mc/plugin/template/core/command/TemplateCommand.kt](project/core/src/main/kotlin/top/wcpe/mc/plugin/template/core/command/TemplateCommand.kt) | 命令示例，注册后可用 `/template greet <玩家名>`。 |
+| [project/core/src/main/resources/lang/zh_CN.yml](project/core/src/main/resources/lang/zh_CN.yml) | i18n 文案；示范 `sendLang` 的参数个数与节点名的对应规则。 |
+| [project/core/src/test/kotlin/top/wcpe/mc/plugin/template/core/service/GreetingServiceImplTest.kt](project/core/src/test/kotlin/top/wcpe/mc/plugin/template/core/service/GreetingServiceImplTest.kt) | 两个 JUnit 5 测试，示范「方法名英文 lowerCamelCase + 中文 `@DisplayName`」的测试规范。 |
+
 ## 快速开始
 
 ```bash
 git clone <仓库地址>
 cd TemplatePlugin
 
+# 质量门禁 + 测试，任一违规即失败（工具链固定 JDK 17，产出 Java 8 字节码）
+./gradlew check
+
 # 构建发行版本（产物在 plugin/build/libs/）
 ./gradlew build
 ```
+
+`build` 就是 assemble + check，门禁不需要单独跑。构建/配置过程需要 **JDK 17**（与 CI 一致）。
+
+最短验证路径：
+
+1. 跑 `./gradlew check` —— PMD / Checkstyle / SpotBugs / Error Prone / detekt / ktlint 与 JUnit 5 测试一起执行，任一违规即失败。覆盖率报告**不在** `check` 里，需要时另跑 `./gradlew koverXmlReport`（含 `src/main/kotlin` 的模块）或 `./gradlew jacocoTestReport`。
+2. `./gradlew build` 后把 `plugin/build/libs/` 下的 JAR 放进服务端，启动后输入 `/template greet <玩家名>` —— 示例命令会从 IoC 容器取到 `GreetingService`，并按 `zh_CN.yml` 的节点回复一句带参数的问候。
 
 若基于本模板新建项目，请先完成下方 [首次使用修改清单](#首次使用修改清单)。
 
@@ -58,7 +80,7 @@ cd TemplatePlugin
 
 | 工作流 | 触发方式 | 说明 |
 | --- | --- | --- |
-| CI | push / PR 到 `master` | 质量门禁 → 构建与测试（质量门禁不通过则不进入构建） |
+| CI | push / PR 到 `master` | 质量门禁与测试（`check`）→ 构建产物（`build`）；质量门禁不通过则第二步不执行 |
 | 预览版发布 | **仅手动触发** | Actions → 预览版发布 → Run workflow；发布/刷新 `latest` 预发布 |
 | Release | **推送 `v*` 标签** | 发布正式版 Release，附带依据合并 PR 自动生成的变更说明 |
 
@@ -87,7 +109,8 @@ git push origin v0.0.1
 - [ ] **group / 版本**：`gradle.properties` 的 `group=top.wcpe.mc.plugin.template` 改为你的 group；`version=` 设为起始版本。
 - [ ] **项目名**：把 `settings.gradle.kts` 中的 `rootProject.name = "TemplatePlugin"` 改为你的插件名。它决定最终插件 JAR 名与 `api` 模块的 `artifactId`（如 `TemplatePlugin` → `templateplugin-api`）。
 - [ ] **插件描述与作者**：`plugin/build.gradle.kts` 的 `description { ... }` —— `desc("TabooLib Bukkit 插件模板")` 是占位描述，改成你的插件简介；`contributors { name("WCPE") }` 改成你的名字。
-- [ ] **代码包名**：业务代码包路径改为你的 group 对应路径（替换 `top.wcpe.mc.plugin.template`）。
+- [ ] **代码包名**：把 `top.wcpe.mc.plugin.template` 整体替换为你的 group 对应路径——[自带示例](#自带的最小可运行示例) 那 5 个文件所在的包目录也要一并替换。
+- [ ] **示例代码**：[自带示例](#自带的最小可运行示例) 可以**整块删掉**（删净 `api/src/main/java`、`project/core/src/{main,test}/kotlin`、`project/core/src/main/resources/lang` 即得空骨架），也可以保留作为起点改写；若删除，记得同时清掉 `zh_CN.yml` 里遗留的 `greet:` 节点。
 - [ ] **Maven 发布目标**：`api/build.gradle.kts` 的 `releasesRepoUrl` / `snapshotsRepoUrl` 改为你的私服地址；发布凭据 `username` / `password` 配在 `~/.gradle/gradle.properties`。**若不需要对外发布**，可删除远程仓库段、只保留 `mavenLocal()`。
 - [ ] **依赖仓库（注意保留）**：根 `build.gradle.kts` 与 `settings.gradle.kts` 中的 `https://maven.wcpe.top/repository/maven-public/` 是 `top.wcpe.taboolib.ioc` 等依赖的来源，**作为依赖源应保留**；它与上一条的"发布目标"是两回事。
 - [ ] **更新日志链接**：`CHANGELOG.md` 底部的 `your-org/your-repo` 改为你的仓库地址。
