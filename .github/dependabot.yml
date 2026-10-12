@@ -1,0 +1,67 @@
+# Dependabot 依赖自动升级配置
+#
+# 目的：让 fork 出去的新项目不靠人工盯版本号，依赖与 CI 动作的升级由机器人开 PR 完成。
+# 读取方：GitHub Dependabot（不是 Gradle 构建的一部分，不参与任何构建逻辑）。
+#
+# 重要提醒（升级 PR 的处理方式）：
+#   本仓库的 CI 跑在自托管 runner 上，Gradle 构建对 IO 与耗时都很敏感——一次冷构建可能
+#   占用 runner 数分钟，依赖集中升级还可能触发大量重新解析与重新下载。
+#   因此依赖升级 PR 在 CI 上验证即可，不必在本地重复跑完整流水线；
+#   但**合并前强烈建议先在本地跑通构建**（至少 `./gradlew build`），确认依赖升级没有破坏
+#   构建脚本、没有引入不兼容的 API 变更、没有让质量门禁（detekt / ktlint / PMD /
+#   Checkstyle / SpotBugs）突然大面积报错。否则容易出现「CI 绿了但本地起不来」，
+#   或者新版本静默改变行为、把不兼容变更带进主干。
+#
+# 覆盖范围说明：
+#   本仓库只有 Gradle 与 GitHub Actions 两类依赖来源（根目录的 build.gradle.kts /
+#   settings.gradle.kts / gradle/wrapper 属于 Gradle 生态的扫描范围，
+#   .github/workflows/ 下的三个工作流属于 GitHub Actions 生态），
+#   不存在 package.json、pom.xml 等其他生态，因此没有配置多余条目。
+version: 2
+
+updates:
+  # GitHub Actions：升级 .github/workflows/ 里使用到的 action 版本
+  - package-ecosystem: "github-actions"
+    # 工作流统一放在 .github/workflows/ 下；填仓库根目录即可让 Dependabot 扫到它们
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      # 固定在周一凌晨：周五到周末是提交高峰，此时开 PR 容易和主干改动撞在一起，
+      # 也更容易遇到 runner 排队；周一错峰处理，评审人在工作时段内看完就能合
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Shanghai"
+    commit-message:
+      # 机器人提交沿用仓库的 Conventional Commits 习惯，用 /ci 前缀标注是 CI 侧改动
+      prefix: "/ci"
+    groups:
+      # 所有 action 升级合并成一个 PR：单独升级某个 action 意义不大，
+      # 合并后只需整体验证一次工作流，减少 PR 数量与评审往返
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "ci"
+      - "依赖升级"
+
+  # Gradle：升级根目录构建脚本里的插件、依赖版本，以及 Gradle Wrapper 版本
+  - package-ecosystem: "gradle"
+    # 构建脚本位于仓库根目录（settings.gradle.kts + 各模块 build.gradle.kts）
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      # 与 action 升级错开半天，避免两类 PR 同时出现在待评审列表里
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Shanghai"
+    commit-message:
+      # 机器人提交用 /deps 前缀标注是依赖升级
+      prefix: "/deps"
+    groups:
+      # 所有 Gradle 依赖升级合并成一个 PR：依赖之间常互相牵制，
+      # 拆成多个 PR 会因为基线不一致而产生互相冲突的解析结果，不如一次性给出可构建的组合
+      gradle:
+        patterns:
+          - "*"
+    labels:
+      - "依赖升级"

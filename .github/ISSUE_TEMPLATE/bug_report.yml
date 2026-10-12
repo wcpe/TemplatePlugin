@@ -1,0 +1,96 @@
+# 缺陷报告表单（GitHub 原生 YAML 表单）
+# 读取方：GitHub Issues。标题会自动带上 [Bug] 前缀，便于列表筛选。
+name: 缺陷报告
+description: 报告插件或构建流程中出现的实际故障现象
+title: "[Bug] "
+labels:
+  - "bug"
+  - "缺陷"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈缺陷！请尽可能把下表填完整，尤其是**复现步骤**与**日志/堆栈**——
+        缺少这两项时，定位问题基本只能靠猜，会明显拖慢处理进度。
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 问题现象
+      description: 实际发生了什么？如果有报错，请把关键提示一并写在这里。
+      placeholder: 例如：执行 /tp 命令时控制台抛出 IllegalArgumentException，玩家无法被传送。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 必填。请按「做了什么 → 期望什么 → 实际什么」的顺序逐步描述，让人能照着复现出来。
+      placeholder: |
+        1. 启动服务端，使用 Paper 1.20.4
+        2. 在控制台执行 /tp Steve
+        3. 观察到控制台报错，玩家位置未变化
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 你认为正确的结果应该是什么？写清「应该是什么样」有助于区分是缺陷还是预期差异。
+      placeholder: 例如：控制台不报错，玩家被传送到目标坐标。
+    validations:
+      required: false
+
+  - type: input
+    id: platform
+    attributes:
+      label: 游戏服务端类型与版本
+      description: 例如 TabooLib 模板服务端、Paper / Spiglot / Folia，以及版本号。不同服务端行为差异较大，必须写明。
+      placeholder: 例如：TabooLib 模板，Paper 1.20.4
+    validations:
+      required: true
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft / Paper 版本
+      description: 若与上面一行重复，可写「同上」；本仓库相关问题通常与 Minecraft 或 Paper 的具体版本强相关。
+      placeholder: 例如：Minecraft 1.20.4 / Paper 1.20.4-R0.1-SNAPSHOT
+    validations:
+      required: true
+
+  - type: input
+    id: jdk-version
+    attributes:
+      label: JDK 版本
+      description: 填写运行服务端与执行构建所用的 JDK 版本（如 1.8、17、21）；构建类缺陷常与 JDK 版本强相关。
+      placeholder: 例如：JDK 17
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志或堆栈
+      description: 请粘贴**完整堆栈**，便于定位：不要只截取报错首行，也不要自行删减中间帧；涉及时请一并给出服务端启动参数与插件配置片段。
+      placeholder: |
+        粘贴完整堆栈，例如：
+        [12:00:01] [Server thread/ERROR]: ...
+        java.lang.IllegalArgumentException: ...
+            at com.example.SomeClass.someMethod(SomeClass.kt:42)
+            ... （完整堆栈）
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: extras
+    attributes:
+      label: 补充信息
+      description: 可多选，帮助判断复现成本与影响范围。
+      options:
+        - label: 已在最新版 / 最新 master 分支上复现
+        - label: 附带了可复现该问题的最小插件配置或示例代码
+        - label: 该缺陷影响服务器正常运行（崩溃、数据损坏等）
