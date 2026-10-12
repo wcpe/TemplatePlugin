@@ -23,10 +23,6 @@ plugins {
     id("org.jetbrains.kotlinx.kover") version "0.9.1" apply false
 }
 
-// 编译工具链版本，默认 17。多个版本共存时可用 -PjdkToolchain=8 让 javac 走真正的 JDK 8，
-// 而不只是产出 8 字节码。Error Prone 需要 JDK 17 的 javac，仅在 17 工具链下挂载。
-val jdkToolchain = providers.gradleProperty("jdkToolchain").getOrElse("17").toInt()
-
 subprojects {
     apply<JavaPlugin>()
     apply(plugin = "org.jetbrains.kotlin.jvm")
@@ -62,20 +58,18 @@ subprojects {
         compileOnly("ink.ptms.core:v12004:12004:universal")
     }
 
-    // 产物固定为 Java 8 字节码：17 工具链用 --release 8，8 工具链用 -source/-target 8。
-    // source/target 必须显式对齐 1.8，否则 Kotlin 会判定 Java 与 Kotlin 的 JVM 目标不一致。
+    // 编译工具链固定 JDK 17，产物用 --release 8 产出 Java 8 字节码，
+    // 在 Java 8 的服务器上照样能跑。source/target 必须显式对齐 1.8，
+    // 否则 Kotlin 会判定 Java 与 Kotlin 的 JVM 目标不一致。
     java {
-        toolchain { languageVersion.set(JavaLanguageVersion.of(jdkToolchain)) }
+        toolchain { languageVersion.set(JavaLanguageVersion.of(17)) }
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
-        // --release 需要 JDK 9+；JDK 8 工具链下只能退回 -source/-target 8
-        if (jdkToolchain >= 9) {
-            options.release.set(8)
-        }
+        options.release.set(8)
     }
 
     tasks.withType<KotlinCompile>().configureEach {
@@ -130,15 +124,6 @@ subprojects {
         maxWarnings = 0 // 任何告警都视为失败
     }
     tasks.withType<Checkstyle>().configureEach {
-        // Checkstyle 10 要求 JDK 11+：工具链为 8 时必须显式换 17 启动器，
-        // 否则会随工具链用 Java 8 启动并以 "class file version 55.0" 崩溃
-        if (jdkToolchain < 11) {
-            javaLauncher.set(
-                javaToolchains.launcherFor {
-                    languageVersion.set(JavaLanguageVersion.of(17))
-                }
-            )
-        }
         // checkstyle.xml 里的抑制文件是裸文件名，Checkstyle 按子项目目录解析，
         // 放在根 config/checkstyle/ 下的抑制文件会静默失效，必须给绝对路径
         configProperties?.putAll(
@@ -153,9 +138,7 @@ subprojects {
 
     // SpotBugs + FindSecBugs 与 Error Prone 都只面向 Java：无 Java 源码的模块不挂载，
     // 免得分析 Kotlin 字节码 / 空跑 javac 产生无意义开销与误报
-    val hasJava = file("src/main/java").exists()
-
-    if (hasJava) {
+    if (file("src/main/java").exists()) {
         apply(plugin = "com.github.spotbugs")
         configure<SpotBugsExtension> {
             toolVersion.set("4.8.6")
@@ -164,10 +147,7 @@ subprojects {
         dependencies {
             "spotbugsPlugins"("com.h3xstream.findsecbugs:findsecbugs-plugin:1.13.0")
         }
-    }
 
-    // Error Prone 挂在 javac 进程上，要求 JDK 17 的编译器
-    if (hasJava && jdkToolchain >= 17) {
         apply(plugin = "net.ltgt.errorprone")
         dependencies {
             "errorprone"("com.google.errorprone:error_prone_core:2.36.0")
