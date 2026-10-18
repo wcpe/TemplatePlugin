@@ -40,7 +40,7 @@ jobs:
       # 交给 actions/cache 打包上传没有收益，缓存体积还会超过 10GB 上限，
       # 导致收尾步骤白白空转 tar 压缩后依然保存失败。
       - name: 配置 JDK 17
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
           java-version: '17'
