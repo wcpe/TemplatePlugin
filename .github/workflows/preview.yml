@@ -39,7 +39,7 @@ jobs:
       # 不启用 setup-java 的 gradle 缓存：自托管 runner 的 ~/.gradle 本就持久存在，
       # 交给 actions/cache 打包上传没有收益，缓存体积还会超过 10GB 上限而空转。
       - name: 配置 JDK 17
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
           java-version: '17'
