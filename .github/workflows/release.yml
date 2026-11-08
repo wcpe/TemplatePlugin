@@ -84,7 +84,7 @@ jobs:
       # 不启用 setup-java 的 gradle 缓存：自托管 runner 的 ~/.gradle 本就持久存在，
       # 交给 actions/cache 打包上传没有收益，缓存体积还会超过 10GB 上限而空转。
       - name: 配置 JDK 17
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6
         with:
           distribution: temurin
           java-version: '17'
@@ -136,7 +136,7 @@ jobs:
       # 第三方 action 固定到 commit SHA：该步骤持 contents: write 与 GITHUB_TOKEN，
       # 浮动 tag 一旦被上游移动即会执行新代码；升级时同步替换 SHA 并更新行尾注释。
       - name: 发布正式 Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
